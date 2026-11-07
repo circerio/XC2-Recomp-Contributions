@@ -21,9 +21,12 @@ vec3 to_linear(vec3 v) {  // SDR white is 1
     return mix(sdr, above, greaterThan(v, vec3(1.0)));
 }
 
-vec3 soft_shoulder(vec3 l, float top) {
+// The shoulder on the largest channel, every channel scaled alike, so that the hue does not change near the peak.
+vec3 roll_off(vec3 l, float top) {
+    float m = max(l.r, max(l.g, l.b));
+    if (m <= 1.0) return l;
     float room = max(top - 1.0, 0.001);
-    return mix(l, 1.0 + room * (1.0 - exp(-(l - 1.0) / room)), greaterThan(l, vec3(1.0)));
+    return l * (1.0 + room * (1.0 - exp(-(m - 1.0) / room))) / m;
 }
 
 vec3 pq_encode(vec3 nits) {
@@ -35,7 +38,7 @@ vec3 pq_encode(vec3 nits) {
 
 void main() {
     vec3 linear = to_linear(max(texture(picture, uv).rgb, vec3(0.0)));
-    vec3 nits = soft_shoulder(linear, levels.peak_nits / levels.paper_white_nits) * levels.paper_white_nits;
+    vec3 nits = roll_off(linear, levels.peak_nits / levels.paper_white_nits) * levels.paper_white_nits;
     if (levels.output_kind < 1.5) {
         const mat3 bt709_to_bt2020 = mat3(0.6274040, 0.0690970, 0.0163916,  // by column
                                           0.3292820, 0.9195400, 0.0880132,

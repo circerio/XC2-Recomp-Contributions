@@ -62,6 +62,34 @@ int main() {
     check(near(soft_shoulder(1e6, top), top, 1e-9), "the shoulder's limit is the peak");
     check(soft_shoulder(5.0, 1.0) <= 1.0 + 1e-3, "a peak at the paper white does not divide by zero");
 
+    // The roll-off on the largest channel: the ratios stay, nothing passes the peak, and the SDR range is untouched.
+    const Rgb colour{1.0, 0.5, 0.125};  // R:G 2, R:B 8
+    for (double gain : {1.01, 1.2, 1.5, 2.0, 3.0, 6.0, 100.0}) {
+        for (double t : {top, 1000.0 / 200.0}) {
+            const Rgb out = roll_off(scaled(colour, gain), t);
+            check(near(out.r / out.g, 2.0, 1e-9) && near(out.r / out.b, 8.0, 1e-9), "the roll-off keeps the ratios");
+            check(max_channel(out) <= t + 1e-9, "the roll-off stays below the peak");
+        }
+    }
+    const Rgb within = roll_off({1.0, 0.25, 0.0}, top);
+    check(within.r == 1.0 && within.g == 0.25 && within.b == 0.0, "the roll-off leaves the SDR range alone");
+    const Rgb just_above = roll_off(scaled(colour, 1.000001), top);
+    check(near(just_above.r, 1.0, 1e-5) && near(just_above.g, 0.5, 1e-5), "no jump where the roll-off starts");
+    const Rgb scrgb = encode_scrgb(scaled(colour, 3.0), lv);
+    check(near(scrgb.r / scrgb.g, 2.0, 1e-9) && scrgb.r * 80 <= 550 + 1e-6, "the output keeps the ratios and the peak");
+
+    // For comparison, the same colour with the shoulder on each channel, as the guide's section 3 lists: the hue moves.
+    const auto per_channel_ratio = [&](double gain, double t) {
+        const Rgb c = per_channel(scaled(colour, gain), [&](double l) { return soft_shoulder(l, t); });
+        return c.r / c.g;
+    };
+    check(near(per_channel_ratio(1.5, top), 1.76, 0.01), "each channel on its own at 1.5 times");
+    check(near(per_channel_ratio(3.0, top), 1.15, 0.01), "each channel on its own at 3 times");
+    check(near(per_channel_ratio(6.0, top), 1.01, 0.01), "each channel on its own at 6 times");
+    check(near(per_channel_ratio(1.5, 5.0), 1.96, 0.01), "each channel on its own, more room, at 1.5 times");
+    check(near(per_channel_ratio(3.0, 5.0), 1.75, 0.01), "each channel on its own, more room, at 3 times");
+    check(near(per_channel_ratio(6.0, 5.0), 1.50, 0.01), "each channel on its own, more room, at 6 times");
+
     // The storage curve: the sRGB curve up to 1, the same value and slope at 1, invertible, and small far above 1.
     check(near(store_encode(1.0), 1.0, 1e-12), "the storage curve at 1");
     const double slope_below = (store_encode(1.0) - store_encode(1.0 - 1e-6)) / 1e-6;

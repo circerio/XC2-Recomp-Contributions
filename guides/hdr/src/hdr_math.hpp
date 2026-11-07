@@ -61,6 +61,14 @@ inline double soft_shoulder(double l, double top) {
     return 1.0 + room * (1.0 - std::exp(-(l - 1.0) / room));
 }
 
+// The shoulder on the largest channel, with every channel scaled by the same factor, so that the ratios between channels, and
+// with them the hue, do not change. Applying soft_shoulder to each channel on its own would squeeze the largest channels most,
+// and bright colours would drift toward yellow and white near the peak. We learned this from xcx-recomp's PR #103 (jmars125).
+inline Rgb roll_off(const Rgb& linear, double top) {
+    const double m = max_channel(linear);
+    return m <= 1.0 ? linear : scaled(linear, soft_shoulder(m, top) / m);
+}
+
 struct Levels {
     double paper_white_nits = 200;
     double peak_nits = 1000;
@@ -68,15 +76,13 @@ struct Levels {
 
 // Linear light where SDR white is 1, to what an HDR10 swapchain (A2B10G10R10, HDR10_ST2084) takes.
 inline Rgb encode_hdr10(const Rgb& linear, const Levels& lv) {
-    const double top = lv.peak_nits / lv.paper_white_nits;
-    const Rgb nits = scaled(per_channel(linear, [&](double l) { return soft_shoulder(l, top); }), lv.paper_white_nits);
+    const Rgb nits = scaled(roll_off(linear, lv.peak_nits / lv.paper_white_nits), lv.paper_white_nits);
     return per_channel(bt709_to_bt2020(nits), pq_encode);
 }
 
 // The same to what an scRGB swapchain (R16G16B16A16_SFLOAT, EXTENDED_SRGB_LINEAR) takes: 1.0 is 80 nits, BT.709 primaries.
 inline Rgb encode_scrgb(const Rgb& linear, const Levels& lv) {
-    const double top = lv.peak_nits / lv.paper_white_nits;
-    return scaled(per_channel(linear, [&](double l) { return soft_shoulder(l, top); }), lv.paper_white_nits / 80.0);
+    return scaled(roll_off(linear, lv.peak_nits / lv.paper_white_nits), lv.paper_white_nits / 80.0);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

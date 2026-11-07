@@ -22,6 +22,7 @@ Each result says how we know it:
 | **HDR with exclusive fullscreen** | It starts, gets an HDR10 swapchain and runs with no errors. [measured] **Nobody has checked the picture.** |
 | **HDR with frame generation** | Not tested. |
 | **HDR with an upscaler** | Not checked as a combination. |
+| **The roll-off in this guide** | The reference code compresses on the largest channel. Our main line still compresses each channel on its own, so this roll-off has not been seen in a game by us (sections 3 and 5). |
 | **Very bright scenes** | We never identified the sun's disc in a frame, only the brightest direction. In an open daytime sky the picture sits close to the peak, and nobody has judged how that looks. |
 | **Monitors other than this one** | A person has only looked at a 550-nit peak. A 1000-nit peak was only run in headless tests, read back as numbers. We don't know whether the reported peak changes when a monitor changes HDR mode. |
 | **Other screens** | The highlight pass was checked in a dusk scene and in daytime scenes. We have not confirmed that menus, cutscenes, night scenes and interiors go through the same tone map. |
@@ -35,7 +36,8 @@ Each result says how we know it:
 4. If the game has a linear scene before its tone map, use that. Don't try to reconstruct highlights from the SDR result.
 5. Let the game's own tone map run as it is, and draw the clipped pixels again with your own pass. You then ship no modified game shader.
 6. Scale a clipped colour to 1 in its largest channel to keep its hue. Clipping each channel turns bright colours yellow and then white.
-7. If the post-processing chain works on gamma-encoded values, store highlights with a curve that grows slowly, so that later passes don't meet huge numbers.
+7. Near the peak, compress on the largest channel too, not on each channel, or you lose the hue again.
+8. If the post-processing chain works on gamma-encoded values, store highlights with a curve that grows slowly, so that later passes don't meet huge numbers.
 
 ## 2. Stage 1: the SDR picture on an HDR swapchain
 
@@ -82,13 +84,23 @@ With only this, the picture is the SDR picture at paper white brightness: no hig
 
 **The cost.** Paper white and peak share the same room. At 360 and 550 nits, highlights have only 1.53 times the brightness of SDR white. In an open daytime sky most of that was used at once: one sky region had a median of about 530 nits. [measured] Someone who wants more room for highlights can set a lower fixed paper white, so keep that setting.
 
-**The shoulder.** A hard clip at the peak flattens everything above it. Instead, above SDR white, with `P` the peak over the paper white:
+**The shoulder.** A hard clip at the peak flattens everything above it. Instead, with `m` the largest channel, above SDR white, and `P` the peak over the paper white:
 
 ```
-out = 1 + (P - 1) * (1 - exp(-(L - 1) / (P - 1)))
+out = colour * (1 + (P - 1) * (1 - exp(-(m - 1) / (P - 1)))) / m
 ```
 
-Its slope at SDR white is 1, the peak is its limit, and nothing below SDR white changes (`soft_shoulder` in the reference code).
+Its slope at SDR white is 1, the peak is its limit, nothing changes while every channel is at or below SDR white, and the ratios between channels stay the same (`roll_off` in the reference code).
+
+**Compress on the largest channel, not on each channel.** Compressing each channel on its own squeezes the largest ones most, so bright colours drift toward yellow and white. The less room there is, the sooner it happens. This is what happens to a colour whose R:G starts at 2.00 (arithmetic, checked in [`tests/test_hdr_math.cpp`](tests/test_hdr_math.cpp)):
+
+| Largest channel before the shoulder | R:G, each channel, paper white 360 / peak 550 | R:G, each channel, paper white 200 / peak 1000 | R:G, largest channel |
+|---|---|---|---|
+| 1.5 times SDR white | 1.76 | 1.96 | 2.00 |
+| 3 times SDR white | 1.15 | 1.75 | 2.00 |
+| 6 times SDR white | 1.01 | 1.50 | 2.00 |
+
+We learned this from reading [PR #103 of xcx-recomp](https://github.com/jmars125/xcx-recomp/pull/103) by jmars125, which rolls off on the largest channel. Our first version, and the first version of this guide, compressed each channel, and **our main line still does**: see section 5.
 
 ## 4. Stage 2: keeping highlights
 
@@ -140,9 +152,11 @@ v = 1 + c * ln(1 + k * (L - 1) / c)        c = 0.5, k = 1.055 / 2.4
 
 ## 5. The choice: hue or white
 
+> **Our main line still compresses each channel on its own. The picture with the roll-off in this guide has not been verified: nobody has looked at it.** Everything we describe seeing below comes from the main line, so it is not what the reference code in this guide draws. Near the peak, compressing each channel pushes colours toward yellow and white (section 3), so some of what follows, such as a lamp's yellow, may come from that and not from keeping the hue. [inferred]
+
 Keeping the hue means a lamp's core stays bright yellow instead of going white, and a daytime sky stays blue instead of washing out. Rolling highlights toward white with brightness ("path to white") is the other option, and closer to how the SDR picture looks.
 
-We kept the hue. What that looked like: [seen, dusk scene; dumps, daytime]
+We chose the hue. What that looked like in our main line, where the highlight pass keeps the ratios between channels and the shoulder then moves them near the peak: [seen, dusk scene; dumps, daytime]
 
 - Lamp faces have a clear edge and their frames are visible, where SDR shows a white core with a soft yellow bloom over the frame. The values come from the game's own scene, so this isn't a rendering error, but it is different from the game's SDR style.
 - A daytime sky that SDR clips to a large white area keeps its blue and the layers of its clouds. It is much bluer than the SDR picture.
@@ -160,7 +174,7 @@ The check that worked compares three runs of the same moment: SDR, HDR10 and scR
 
 **What did not work:** our first version limited the 99.9th percentile of the difference over the whole frame, and it failed by a wide margin. The frames were not identical between runs: a swinging sign, walking characters and flickering lamps differ as much between the two HDR runs as between HDR and SDR. A whole-frame limit measures the scene, not the encoding. Use a control pair.
 
-Results for stage 1, over 6 frames in each output: [measured]
+Results for stage 1, over 6 frames in each output. Nothing is above SDR white in stage 1, so they do not depend on how the shoulder compresses: [measured]
 
 | Check | HDR10 | scRGB |
 |---|---|---|
@@ -170,7 +184,7 @@ Results for stage 1, over 6 frames in each output: [measured]
 
 The HDR10 bias near white is about half a 10-bit PQ code step at that brightness, so it's the format's precision and not a mistake.
 
-**These limits only apply to stage 1.** Stage 2 changes some pixels on purpose, and our bias and content checks were not updated to leave those pixels out, so they fail on stage 2 as expected. For stage 2 we looked at how many pixels rose above the paper white and how far: [measured]
+**These limits only apply to stage 1.** Stage 2 changes some pixels on purpose, and our bias and content checks were not updated to leave those pixels out, so they fail on stage 2 as expected. For stage 2 we looked at how many pixels rose above the paper white and how far. These numbers come from our main line, with each channel compressed on its own, and we have not measured them again with the largest-channel roll-off: [measured]
 
 | Scene | Levels | Pixels above paper white | Brightest |
 |---|---|---|---|
@@ -201,4 +215,6 @@ On Windows this also builds `print_display_levels`, which prints what the system
 The code here was written for this guide and is under this repository's MIT licence. It contains no third-party code. Referenced: SMPTE ST 2084 for PQ, ITU-R BT.2087 for the primaries' conversion, the Vulkan
 specification (`VK_EXT_swapchain_colorspace`, `VK_EXT_hdr_metadata`), and Microsoft's DXGI and DisplayConfig documentation.
 
-Other projects have their own HDR work: TotK Recomp has HDR output, and xcx-recomp has a port of it in [PR #103](https://github.com/jmars125/xcx-recomp/pull/103). Monado's notes recommend the same direction: an HDR10 swapchain, a tone map that follows the game's, and the interface at paper white. We used no code from any of them.
+**Rolling off on the largest channel (section 3) is an idea we learned from jmars125's [PR #103 of xcx-recomp](https://github.com/jmars125/xcx-recomp/pull/103).** That PR's tone map credits its approach to [TotK Recomp](https://github.com/valentderah/totk-pc-recomp)'s, and through it to [RenoDX](https://github.com/clshortfuse/renodx)'s TotK mod by souperman9 and Musa. We did not trace where the roll-off itself first came from. We took the principle only and copied no code: the curve is the shoulder we already had, which starts at SDR white, where the PR's starts at half the peak when that is higher. We have not compared the two.
+
+Monado's notes recommend the same direction as this guide: an HDR10 swapchain, a tone map that follows the game's, and the interface at paper white. We used no code from it.
