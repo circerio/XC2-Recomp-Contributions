@@ -63,7 +63,8 @@ inline double soft_shoulder(double l, double top) {
 
 // The shoulder on the largest channel, with every channel scaled by the same factor, so that the ratios between channels, and
 // with them the hue, do not change. Applying soft_shoulder to each channel on its own would squeeze the largest channels most,
-// and bright colours would drift toward yellow and white near the peak. We learned this from xcx-recomp's PR #103 (jmars125).
+// and bright colours would drift toward yellow and white near the peak. The cost is brightness in saturated colours, which the
+// guide's section 3 lists along with a blend of the two. We learned this from xcx-recomp's PR #103 (jmars125).
 inline Rgb roll_off(const Rgb& linear, double top) {
     const double m = max_channel(linear);
     return m <= 1.0 ? linear : scaled(linear, soft_shoulder(m, top) / m);

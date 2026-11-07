@@ -90,6 +90,45 @@ int main() {
     check(near(per_channel_ratio(3.0, 5.0), 1.75, 0.01), "each channel on its own, more room, at 3 times");
     check(near(per_channel_ratio(6.0, 5.0), 1.50, 0.01), "each channel on its own, more room, at 6 times");
 
+    // What the roll-off costs, as the guide's section 3 lists: luminance in nits, BT.709 weights, on its example colours.
+    const auto luminance = [](const Rgb& c) { return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b; };
+    const auto each_channel = [](const Rgb& c, double t) {
+        return per_channel(c, [&](double l) { return soft_shoulder(l, t); });
+    };
+    const struct {
+        Rgb colour;
+        double each_360, largest_360, each_200, largest_200;
+    } costs[] = {
+        {{3.0, 1.5, 0.375}, 466, 316, 325, 298},
+        {{6.0, 3.0, 0.75}, 527, 319, 543, 446},
+        {{1.2, 1.6, 3.0}, 478, 294, 311, 277},
+        {{0.6, 0.8, 1.5}, 286, 257, 161, 158},
+        {{2.4, 2.5, 2.8}, 539, 486, 450, 437},
+        {{3.0, 3.0, 3.0}, 546, 546, 515, 515},
+    };
+    for (const auto& row : costs) {
+        check(near(luminance(each_channel(row.colour, top)) * 360, row.each_360, 0.51), "each channel's luminance at 360 and 550");
+        check(near(luminance(roll_off(row.colour, top)) * 360, row.largest_360, 0.51), "the roll-off's luminance at 360 and 550");
+        check(near(luminance(each_channel(row.colour, 5.0)) * 200, row.each_200, 0.51), "each channel's luminance at 200 and 1000");
+        check(near(luminance(roll_off(row.colour, 5.0)) * 200, row.largest_200, 0.51), "the roll-off's luminance at 200 and 1000");
+    }
+    double last_y = 0.0;
+    for (double gain = 0.5; gain < 20.0; gain *= 1.01) {
+        const double y = luminance(roll_off(scaled(colour, gain), top));
+        check(y >= last_y - 1e-12, "for a given hue, the roll-off's luminance rises with exposure");
+        last_y = y;
+    }
+    check(near(last_y * 360, 319, 0.51) && last_y < 1.0, "this orange stops near 319 nits, below the paper white");
+
+    // The blend in the guide's section 3: within the peak, and between the two methods in both hue and luminance.
+    const Rgb orange3{3.0, 1.5, 0.375};
+    const Rgb largest3 = roll_off(orange3, top), each3 = each_channel(orange3, top);
+    const Rgb even{(largest3.r + each3.r) / 2, (largest3.g + each3.g) / 2, (largest3.b + each3.b) / 2};
+    check(max_channel(even) <= top + 1e-9, "the blend stays within the peak");
+    check(near(luminance(even) * 360, 391, 0.51), "the even blend's luminance");
+    check(near(even.r / even.g, 1.46, 0.01), "the even blend's R:G");
+    check(luminance(largest3) < luminance(even) && luminance(even) < luminance(each3), "the blend's luminance is between the two");
+
     // The storage curve: the sRGB curve up to 1, the same value and slope at 1, invertible, and small far above 1.
     check(near(store_encode(1.0), 1.0, 1e-12), "the storage curve at 1");
     const double slope_below = (store_encode(1.0) - store_encode(1.0 - 1e-6)) / 1e-6;
