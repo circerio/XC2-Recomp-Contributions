@@ -1,5 +1,5 @@
 // A small model of why a monitor's refresh meter can jump at a locked frame rate. Synthetic: it shows the mechanism and
-// proves nothing about any real machine. Measured numbers are in guides/vrr/README.md section 5.
+// proves nothing about any real machine. What we saw on a real one is in guides/vrr/README.md section 5.
 //
 // One thread produces a frame on a fixed time grid. A second thread renders it, which takes a varying time, and then
 // flips. Compared: flipping as soon as the frame is rendered, and flipping through FlipPacer.

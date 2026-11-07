@@ -65,7 +65,7 @@ window opens, after a fullscreen change, on `WM_DISPLAYCHANGE`, and every few se
 exclusive, borderless and windowed four times, the largest gap between frames around a switch was about 93 ms. [measured]
 
 We compared present modes at a 60 fps cap, one run each. In borderless, MAILBOX and FIFO came out the same. In a decorated window,
-MAILBOX was steadier and reached the screen about 1.7 ms sooner, which is why a decorated window keeps it. [measured]
+MAILBOX was steadier and reached the screen sooner, which is why a decorated window keeps it. [measured]
 
 ## 3. Which windows get VRR
 
@@ -99,9 +99,9 @@ silently measured the old path. Treat all zeros as "unknown". This has a cost: y
 way, so on such a monitor at 60 Hz the cap becomes 57 and about 3 frames a second are repeated. Reading the range from the
 monitor's EDID or using a vendor API such as AMD's ADLX might avoid that. We have not tried either.
 
-**Present timing looked like a fixed refresh rate.** With the display on, the time from present to on-screen was about
-3.5 ms at p50 and 5.7 ms at p95. That looked like an extra wait of 0 to 4.17 ms, exactly what you would expect from waiting
-for the next 240 Hz refresh, so we concluded VRR was probably not engaged. The indicator then showed that it was. Do not
+**Present timing looked like a fixed refresh rate.** With the display on, the time from present to on-screen looked like it
+included an extra wait of 0 to 4.17 ms, exactly what you would expect from waiting for the next 240 Hz refresh, so we concluded
+VRR was probably not engaged. The indicator then showed that it was. Do not
 infer VRR from present timing.
 
 What does work:
@@ -126,15 +126,14 @@ What we found, in three layers:
    is followed by an early one, so the intervals alternate long and short even though the average is exactly 60 fps.
    [measured] Improving the pacing of the game thread alone made no visible difference. [seen]
 2. **The panel's lower limit.** This monitor's range starts at 48 Hz, or 20.83 ms. A longer gap forces the panel to rescan,
-   and the meter then reads high. In one 136-second run, 1.84% of intervals were over that limit, spread over 54 of those
-   seconds. [measured] A 60 fps cap leaves 4.2 ms of margin to that limit and a 144 cap leaves 13.9 ms, which may be why 144 looked
-   normal. [inferred] We also saw the meter sit at 120 while 60 consecutive flips, measured with PresentMon, were all
-   16.5 to 16.9 ms apart, so not all of it comes from our flips. This looks like the driver's low framerate compensation, but we cannot
-   see what the driver does and have not proven it. [inferred]
-3. **Spikes in the work.** Turning the camera roughly doubled the render thread's work. In a headless run capped at 64 fps, frames
-   over the panel's limit went from 0 when standing still to 58 to 72 in each 12-second turn. Moving texture copies to a worker and
-   sub-allocating images brought that down to 3 to 9. [measured] (Both are separate pieces of work and are not part of this guide, and
-   neither is on by default in our build yet. Sub-allocating through VMA follows what xcx-recomp does.)
+   and the meter then reads high. Some intervals did go over that limit. [measured] A 60 fps cap leaves 4.2 ms of margin to it and a
+   144 cap leaves 13.9 ms, which may be why 144 looked normal. [inferred] We also saw the meter sit at 120 while 60 consecutive flips,
+   measured with PresentMon, were evenly spaced, so not all of it comes from our flips. This looks like the driver's low framerate
+   compensation, but we cannot see what the driver does and have not proven it. [inferred]
+3. **Spikes in the work.** Turning the camera roughly doubled the render thread's work, and that is where the frames over the panel's
+   limit gathered. Moving texture copies to a worker and sub-allocating images brought their number down a lot. [measured] (Both are
+   separate pieces of work and are not part of this guide, and neither is on by default in our build yet. Sub-allocating through VMA
+   follows what xcx-recomp does.)
 
 ### Keeping a schedule for the flips
 
@@ -142,14 +141,14 @@ What we found, in three layers:
 starts the schedule again from itself, instead of shortening the next interval. The 2 ms allowance stops a timer's
 lateness from lowering the frame rate.
 
-| Setup, 60 fps cap | Flip intervals p1 / p50 / p99 (ms) [measured] | Monitor's meter [seen] |
-|---|---|---|
-| Game thread pacing only, standing still | 14.25 / 16.64 / 18.91 | Jumped past 100 even when standing still |
-| Flip schedule, whole run | 16.06 / 16.67 / 22.73 | Very steady standing still; jumped when moving and turning, once stuck at 120 |
-| Flip schedule and fewer work spikes, turning the camera | 16.28 / 16.66 / 17.04 | Steady; about once in 10 seconds of turning it passed 100 |
+What someone watching the monitor's meter saw at a 60 fps cap, in runs of about 30 seconds: [seen]
 
-**Read this table for its direction only.** Each run lasted about 30 seconds, the movement differs from row to row, and the last column
-is someone watching a number.
+- **Pacing only the game thread:** it jumped past 100 even when standing still.
+- **The flip schedule:** very steady when standing still, but it still jumped when moving and turning, and once stuck at 120.
+- **The flip schedule and fewer work spikes:** steady while turning the camera, passing 100 about once in 10 seconds of turning.
+
+**Read this for its direction only.** The runs were short, what the player was doing differs between them, and this is someone
+watching a number, not a measurement.
 
 [`tests/sim_flip_pacing.cpp`](tests/sim_flip_pacing.cpp) shows the mechanism on a synthetic trace. It proves nothing about a real
 machine, but it shows the cost as well as the gain: holding flips adds latency, up to about the size of the largest spike.
