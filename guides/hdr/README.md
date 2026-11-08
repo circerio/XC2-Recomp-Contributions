@@ -22,7 +22,7 @@ Each result says how we know it:
 | **HDR with exclusive fullscreen** | It starts, gets an HDR10 swapchain and runs with no errors. [measured] **Nobody has checked the picture.** |
 | **HDR with frame generation** | Not tested. |
 | **HDR with an upscaler** | Not checked as a combination. |
-| **The roll-off in this guide** | The reference code compresses on the largest channel. Our main line still compresses each channel on its own, so neither this roll-off, its lower brightness in saturated colours, nor the blend described in section 3 has been seen in a game by us (section 5). |
+| **The roll-off in this guide** | The blend in section 3 and the other approaches there were measured on frames dumped from the game, and a test build's shader matched the calculation on those frames. Nobody has looked at any of them on a screen. Our main line still compresses each channel on its own (section 5). |
 | **Very bright scenes** | We never identified the sun's disc in a frame, only the brightest direction. In an open daytime sky the picture sits close to the peak, and nobody has judged how that looks. |
 | **Monitors other than this one** | A person has only looked at a 550-nit peak. A 1000-nit peak was only run in headless tests, read back as numbers. We don't know whether the reported peak changes when a monitor changes HDR mode. |
 | **Other screens** | The highlight pass was checked in a dusk scene and in daytime scenes. We have not confirmed that menus, cutscenes, night scenes and interiors go through the same tone map. |
@@ -36,7 +36,7 @@ Each result says how we know it:
 4. If the game has a linear scene before its tone map, use that. Don't try to reconstruct highlights from the SDR result.
 5. Let the game's own tone map run as it is, and draw the clipped pixels again with your own pass. You then ship no modified game shader.
 6. Scale a clipped colour to 1 in its largest channel to keep its hue. Clipping each channel turns bright colours yellow and then white.
-7. Near the peak, decide how to compress. Compressing each channel moves the hue toward white and keeps more brightness. Compressing on the largest channel keeps the hue and gives up brightness in saturated colours. You can also blend the two (section 3).
+7. Near the peak, decide how to compress. Compressing each channel moves the hue toward white and keeps more brightness. Compressing on the largest channel keeps the hue and gives up brightness in saturated colours. We blend the two, with a strength set from the peak over the paper white, because the right trade-off depends on the display (section 3).
 8. If the post-processing chain works on gamma-encoded values, store highlights with a curve that grows slowly, so that later passes don't meet huge numbers.
 
 ## 2. Stage 1: the SDR picture on an HDR swapchain
@@ -84,15 +84,15 @@ With only this, the picture is the SDR picture at paper white brightness: no hig
 
 **The cost.** Paper white and peak share the same room. At 360 and 550 nits, highlights have only 1.53 times the brightness of SDR white. In an open daytime sky most of that was used at once: one sky region had a median of about 530 nits. [measured] Someone who wants more room for highlights can set a lower fixed paper white, so keep that setting.
 
-**The shoulder.** A hard clip at the peak flattens everything above it. Instead, with `m` the largest channel, above SDR white, and `P` the peak over the paper white:
+**The shoulder.** A hard clip at the peak flattens everything above it. Instead, with `P` the peak over the paper white, a value `x` above SDR white goes to:
 
 ```
-out = colour * (1 + (P - 1) * (1 - exp(-(m - 1) / (P - 1)))) / m
+s(x) = 1 + (P - 1) * (1 - exp(-(x - 1) / (P - 1)))
 ```
 
-Its slope at SDR white is 1, the peak is its limit, nothing changes while every channel is at or below SDR white, and the ratios between channels stay the same (`roll_off` in the reference code).
+Its slope at SDR white is 1, the peak is its limit, and nothing changes at or below SDR white. It can be applied to **each channel** on its own, or to the **largest channel** `m`, with every channel scaled by the same factor, `colour * s(m) / m`, so that the ratios between channels stay the same (`roll_off_each` and `roll_off_largest` in the reference code).
 
-**Each channel or the largest channel: a trade-off.** The reference code uses the largest channel, but that is not a finding that it looks better: nobody has compared the two on a screen.
+**Each channel or the largest channel: a trade-off.** Neither is better everywhere, and nobody has compared the two on a screen.
 
 Compressing each channel on its own squeezes the largest ones most, so bright colours drift toward yellow and white. The less room there is, the sooner it happens. This is what happens to a colour whose R:G starts at 2.00 (arithmetic, checked in [`tests/test_hdr_math.cpp`](tests/test_hdr_math.cpp)):
 
@@ -117,17 +117,64 @@ The largest channel keeps the hue, but it costs brightness in saturated colours.
 
 For a given hue, luminance still rises with exposure, but at 360 and 550 nits this orange stops near 319 nits, below the paper white. Saturated colours can look brighter than their luminance suggests, so how much of this is visible has to be judged on a screen. [inferred]
 
-**A middle way: blend the two results by a strength.** With `t` from 0 to 1:
+**What we use: a blend whose strength follows the room.** The reference code blends the two results, with a strength `k` set from the room:
 
 ```
-out = (1 - t) * largest_channel_result + t * each_channel_result
+out = (1 - k) * each_channel_result + k * largest_channel_result
+k   = 1 - 0.72 * exp(-(log2(P) / 2.64) ^ 3.65)
 ```
 
-`t = 0` is the largest channel and `t = 1` is each channel. Both results stay within the peak, so the blend does too. At `t = 0.5`, the orange at (3, 1.5, 0.375) with 360 and 550 nits comes to about 391 nits and an R:G of 1.46: both between the two methods. The reference code does not include this, and we have not tried it in a game.
+Both results have the same largest channel, so the blend has it too and stays within the peak. For each pixel, the luminance it loses against compressing each channel is `k` times what the largest channel alone loses, and its drift toward white is `1 - k` times what compressing each channel gives (both checked in the tests). One number sets the trade-off, so it can follow the display.
 
-We took the idea of a strength from the `hdr_hue` setting in [PR #103 of xcx-recomp](https://github.com/jmars125/xcx-recomp/pull/103) by jmars125 (0 to 100, 50 by default). What it blends is different from the formula above: above SDR white and before its roll-off, it moves the hue-kept colour toward the game's own SDR result at the same luminance, fading in as the largest channel goes from 1 to 2.
+`k` is 0.28 with no room and still 0.28 at 360 and 550 nits, then 0.61 at 5 times, 0.85 at 8 times, and about 1 from 16 times (`hue_keep` in the reference code). We chose it this way: at each amount of room, take the largest `k` for which the 95th percentile of the luminance highlight pixels lose, against compressing each channel, stays within 15%. By the two properties above, that is also the `k` with the least drift toward white within that limit. **The 15% is our choice, not a finding.** The function is a smooth fit that stays at or below that limit from 1 to 64 times the room, and it changes by at most 0.36 when the room doubles, so moving a paper white or peak setting doesn't make the picture jump. With the orange above at 360 and 550 nits, it gives about 424 nits and an R:G of 1.30.
+
+What it gives on HDR frames dumped from the game, over highlight pixels (largest channel above SDR white) in daytime and night scenes; each number is the worse of the scenes. Luminance loss is against compressing each channel; the hue shift is the Oklab hue against the scene, for pixels whose Oklab chroma over lightness is at least 0.05; the saturation loss is how much that ratio drops: [measured]
+
+| Paper white / peak | Room | `k` | Luminance loss, 95th percentile | Hue shift, 95th percentile (each channel alone) | Saturation loss, 95th percentile | Largest channel alone: luminance loss, 95th percentile |
+|---|---|---|---|---|---|---|
+| 360 / 550 | 1.53 | 0.28 | 14.2% | 31.5° (55.5°) | 78% | 50.3% |
+| 360 / 1000 | 2.78 | 0.36 | 13.7% | 17.4° (30.5°) | 60% | 37.9% |
+| 100 / 400 | 4.00 | 0.50 | 14.6% | 8.6° (18.8°) | 37% | 29.1% |
+| 203 / 1000 | 4.93 | 0.61 | 14.9% | 5.1° (14.4°) | 25% | 24.6% |
+| 160 / 1000 | 6.25 | 0.74 | 14.8% | 2.6° (10.7°) | 13% | 20.1% |
+| 160 / 1500 | 9.38 | 0.91 | 12.7% | 0.6° (6.6°) | 3% | 13.9% |
+| 100 / 4000 | 40 | 1.00 | 3.4% | 0.0° (1.4°) | 0% | 3.4% |
+
+- With little room there is not enough to keep everything. The 15% limit holds `k` near 0.28: the hue shift falls by about two fifths, and saturated highlights still lose most of their saturation.
+- From about 5 times, `k` is above 0.6, the hue barely moves, and the luminance loss stays within 15%.
+- The largest channel alone shifts no hue and loses no saturation; compressing each channel alone loses no luminance by this measure. The blend sits between them.
+- A dusk scene we left out of the fit stayed within 8% luminance loss at the 95th percentile.
+
+We took the idea of a strength from the `hdr_hue` setting in [PR #103 of xcx-recomp](https://github.com/jmars125/xcx-recomp/pull/103) by jmars125 (0 to 100, 50 by default). What it blends is different from the formula above: above SDR white and before its roll-off, it moves the hue-kept colour toward the game's own SDR result at the same luminance, fading in as the largest channel goes from 1 to 2. Setting the strength from the room, the function and its 15% rule are our own, fitted on our frames.
 
 We learned the largest-channel roll-off from reading the same PR. Our first version, and the first version of this guide, compressed each channel, and **our main line still does**: see section 5.
+
+**Other approaches we compared.** We also compared other ways to treat highlights near the peak, on the same kind of frames, by numbers only: nobody has looked at any of them on a screen. The checks were written down before we judged any frames:
+
+- Nothing in the SDR range changes, bit for bit.
+- Nothing passes the peak, and a brighter input never comes out darker.
+- No new banding, and no new reversals of light and dark between neighbouring pixels.
+- A 1% change in exposure, a small local flash, or the change between consecutive frames moves the output at most 10% more than it moves the input or either plain method.
+- An approach is offered only where it clearly beats, on hue or on detail, the blend that loses the same luminance, on at least two scenes and three neighbouring display settings.
+
+We revised these checks once, after the first round:
+- Brightness counts as a win, against the blend above.
+- Small changes are measured as colour differences (ΔE_ITP) instead of code steps.
+- An approach only has to pass where it is offered.
+
+The knee with the same `k` was added after that round too. Because of this, every approach that passed was checked again, with the same rules, on frames from scenes it had not been judged on.
+
+| Approach | What it keeps | What it costs | Where it held up |
+|---|---|---|---|
+| **Compressing only the luminance** in a perceptual space (Oklab lightness, or ICtCp with BT.2390's curve), and reducing saturation where a colour does not fit | All the brightness. From about 4 times the room, the hue about as well as the blend or better | With little room, saturated skies go almost white: at 360 and 550 nits the median saturation of daytime highlights fell by 98 to 99.5%. With more room, the most saturated colours still lose more than with the blend: a 95th percentile of 55% against 36% at 4 times, and 24% against 8% at 8 times. From 3.75 to 4.2 times, it amplified small exposure changes beyond the limit | 5 to 6.25 times on the first frames. It was not checked on new frames: we took one approach of each kind further, and the one toward white below held over a wider range |
+| **Starting the shoulder at BT.2390's knee**, with the same `k` | Most of the brightness the blend gives up on bright displays: from 6.25 to 10 times, the 95th percentile of the luminance loss fell from 5–14% to 0–8% | Up to 0.4° more hue shift and 2.2 points more saturation loss | 6.25 to 10 times, also on new frames |
+| **The same knee, then toward white**, more the further a colour is beyond the peak | About the same brightness, and almost no hue shift, because the brightest colours go white | Up to 6.6 points more saturation loss | 8 to 11.1 times, also on new frames |
+| **Moving the hue back to the scene's** in Oklab, keeping the blend's lightness and chroma (the principle of RenoDX's hue correction) | The hue, on every display | More saturation loss, and with little room more than 15% luminance loss | 4.2 to 5.6 times on the first frames, but on new frames it no longer beat the blend |
+| **Local tone mapping** that keeps the detail inside highlights | Some detail | Its masks moved with the exposure, so it failed the exposure check everywhere | Nowhere |
+
+- BT.2390's knee is `1.5 * PQ(peak) - 0.5` in PQ, never below the paper white. Below about 4 times the room it sits at the paper white, so it is the blend itself. It only changes where the curve starts, which is computed once per frame.
+- Above about 10 times, our new frames had too few bright highlights to tell the approaches apart.
+- Our main line uses none of these alternatives.
 
 ## 4. Stage 2: keeping highlights
 
@@ -179,7 +226,10 @@ v = 1 + c * ln(1 + k * (L - 1) / c)        c = 0.5, k = 1.055 / 2.4
 
 ## 5. The choice: hue or white
 
-> **Our main line still compresses each channel on its own. The picture with the roll-off in this guide has not been verified: nobody has looked at it.** Everything we describe seeing below comes from the main line, so it is not what the reference code in this guide draws. Near the peak, compressing each channel pushes colours toward yellow and white (section 3), so some of what follows, such as a lamp's yellow, may come from that and not from keeping the hue. It also keeps more brightness in saturated colours than the reference code does, so the same scenes may be less bright with the reference code. [inferred]
+> **Our main line still compresses each channel on its own. The picture with the blend in this guide has not been verified: nobody has looked at it.** Everything we describe seeing below comes from the main line, so it is not what the reference code in this guide draws.
+>
+> - Near the peak, compressing each channel pushes colours toward yellow and white (section 3). We measured it on a lamp face whose scene colour is a golden orange (HSV hue 46.5°; pure yellow is 60°). With each channel compressed, it came out at 50.6° at 200 and 550 nits, the levels it was looked at with, and at 55.5° at 360 and 550 nits; the blend gives 48.9° and 52.3°. [measured] So at the levels it was seen with, its yellow is mostly the scene's own; at 360 and 550 nits, it would be mostly the shoulder's.
+> - Compressing each channel also keeps more brightness in saturated colours. With the blend, highlight pixels lose up to about 15% of their luminance at the 95th percentile (section 3).
 
 Keeping the hue means a lamp's core stays bright yellow instead of going white, and a daytime sky stays blue instead of washing out. Rolling highlights toward white with brightness ("path to white") is the other option, and closer to how the SDR picture looks.
 
@@ -211,7 +261,7 @@ Results for stage 1, over 6 frames in each output. Nothing is above SDR white in
 
 The HDR10 bias near white is about half a 10-bit PQ code step at that brightness, so it's the format's precision and not a mistake.
 
-**These limits only apply to stage 1.** Stage 2 changes some pixels on purpose, and our bias and content checks were not updated to leave those pixels out, so they fail on stage 2 as expected. For stage 2 we looked at how many pixels rose above the paper white and how far. These numbers come from our main line, with each channel compressed on its own, and we have not measured them again with the largest-channel roll-off: [measured]
+**These limits only apply to stage 1.** Stage 2 changes some pixels on purpose, and our bias and content checks were not updated to leave those pixels out, so they fail on stage 2 as expected. For stage 2 we looked at how many pixels rose above the paper white and how far. These numbers come from our main line, with each channel compressed on its own, and we have not measured them again with the blend in section 3: [measured]
 
 | Scene | Levels | Pixels above paper white | Brightest |
 |---|---|---|---|
@@ -240,8 +290,8 @@ On Windows this also builds `print_display_levels`, which prints what the system
 ## Sources and related work
 
 The code here was written for this guide and is under this repository's MIT licence. It contains no third-party code. Referenced: SMPTE ST 2084 for PQ, ITU-R BT.2087 for the primaries' conversion, the Vulkan
-specification (`VK_EXT_swapchain_colorspace`, `VK_EXT_hdr_metadata`), and Microsoft's DXGI and DisplayConfig documentation.
+specification (`VK_EXT_swapchain_colorspace`, `VK_EXT_hdr_metadata`), and Microsoft's DXGI and DisplayConfig documentation. For the approaches compared in section 3: ITU-R BT.2390 and BT.2408 for the knee and the EETF, ITU-R BT.2100 for ICtCp, ITU-R BT.2124 for ΔE_ITP, and Björn Ottosson's Oklab.
 
-**Rolling off on the largest channel and blending by a strength (section 3) are ideas we learned from jmars125's [PR #103 of xcx-recomp](https://github.com/jmars125/xcx-recomp/pull/103).** That PR's tone map credits its approach to [TotK Recomp](https://github.com/valentderah/totk-pc-recomp)'s, and through it to [RenoDX](https://github.com/clshortfuse/renodx)'s TotK mod by souperman9 and Musa; its notices name correcting the hue of highlights toward the game's SDR result as one of the ideas from that mod. We did not trace where the roll-off itself first came from. We took the principles only and copied no code: the curve is the shoulder we already had, which starts at SDR white, where the PR's starts at half the peak when that is higher. We have not compared the two.
+**Rolling off on the largest channel and blending by a strength (section 3) are ideas we learned from jmars125's [PR #103 of xcx-recomp](https://github.com/jmars125/xcx-recomp/pull/103), since merged.** That PR's tone map credits its approach to [TotK Recomp](https://github.com/valentderah/totk-pc-recomp)'s, and through it to [RenoDX](https://github.com/clshortfuse/renodx)'s TotK mod by souperman9 and Musa; its notices name correcting the hue of highlights toward the game's SDR result as one of the ideas from that mod. We did not trace where the roll-off itself first came from. We took the principles only and copied no code: the curve is the shoulder we already had, which starts at SDR white, where the PR's starts at half the peak when that is higher. The hue correction compared in section 3 follows RenoDX's principle, also without its code.
 
 Monado's notes recommend the same direction as this guide: an HDR10 swapchain, a tone map that follows the game's, and the interface at paper white. We used no code from it.

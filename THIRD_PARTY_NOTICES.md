@@ -13,4 +13,5 @@ No code was copied for these.
 
 | Where | Idea | Source |
 |---|---|---|
-| `guides/hdr` (`roll_off`, and the blend in the guide's section 3) | Rolling off near the peak on the largest channel, so that the hue is kept; blending two results by a strength, as its `hdr_hue` setting does | [xcx-recomp PR #103](https://github.com/jmars125/xcx-recomp/pull/103) by jmars125 (MIT). Its tone map credits its approach to TotK Recomp's and, through it, to RenoDX's TotK mod by souperman9 and Musa |
+| `guides/hdr` (`roll_off_largest`, and the blend in `roll_off`) | Rolling off near the peak on the largest channel, so that the hue is kept; blending two results by a strength, as its `hdr_hue` setting does. Setting that strength from the room above paper white is ours | [xcx-recomp PR #103](https://github.com/jmars125/xcx-recomp/pull/103) by jmars125 (MIT). Its tone map credits its approach to TotK Recomp's and, through it, to RenoDX's TotK mod by souperman9 and Musa |
+| `guides/hdr` (the guide's section 3, text only) | Moving a result's hue back toward a reference while keeping its lightness and chroma, one of the approaches the guide compares | [RenoDX](https://github.com/clshortfuse/renodx) (MIT, Carlos Lopez Jr.) |

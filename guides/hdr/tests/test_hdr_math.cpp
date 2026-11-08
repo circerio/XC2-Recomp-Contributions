@@ -66,21 +66,19 @@ int main() {
     const Rgb colour{1.0, 0.5, 0.125};  // R:G 2, R:B 8
     for (double gain : {1.01, 1.2, 1.5, 2.0, 3.0, 6.0, 100.0}) {
         for (double t : {top, 1000.0 / 200.0}) {
-            const Rgb out = roll_off(scaled(colour, gain), t);
+            const Rgb out = roll_off_largest(scaled(colour, gain), t);
             check(near(out.r / out.g, 2.0, 1e-9) && near(out.r / out.b, 8.0, 1e-9), "the roll-off keeps the ratios");
             check(max_channel(out) <= t + 1e-9, "the roll-off stays below the peak");
         }
     }
-    const Rgb within = roll_off({1.0, 0.25, 0.0}, top);
+    const Rgb within = roll_off_largest({1.0, 0.25, 0.0}, top);
     check(within.r == 1.0 && within.g == 0.25 && within.b == 0.0, "the roll-off leaves the SDR range alone");
-    const Rgb just_above = roll_off(scaled(colour, 1.000001), top);
+    const Rgb just_above = roll_off_largest(scaled(colour, 1.000001), top);
     check(near(just_above.r, 1.0, 1e-5) && near(just_above.g, 0.5, 1e-5), "no jump where the roll-off starts");
-    const Rgb scrgb = encode_scrgb(scaled(colour, 3.0), lv);
-    check(near(scrgb.r / scrgb.g, 2.0, 1e-9) && scrgb.r * 80 <= 550 + 1e-6, "the output keeps the ratios and the peak");
 
     // For comparison, the same colour with the shoulder on each channel, as the guide's section 3 lists: the hue moves.
     const auto per_channel_ratio = [&](double gain, double t) {
-        const Rgb c = per_channel(scaled(colour, gain), [&](double l) { return soft_shoulder(l, t); });
+        const Rgb c = roll_off_each(scaled(colour, gain), t);
         return c.r / c.g;
     };
     check(near(per_channel_ratio(1.5, top), 1.76, 0.01), "each channel on its own at 1.5 times");
@@ -92,9 +90,6 @@ int main() {
 
     // What the roll-off costs, as the guide's section 3 lists: luminance in nits, BT.709 weights, on its example colours.
     const auto luminance = [](const Rgb& c) { return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b; };
-    const auto each_channel = [](const Rgb& c, double t) {
-        return per_channel(c, [&](double l) { return soft_shoulder(l, t); });
-    };
     const struct {
         Rgb colour;
         double each_360, largest_360, each_200, largest_200;
@@ -107,27 +102,53 @@ int main() {
         {{3.0, 3.0, 3.0}, 546, 546, 515, 515},
     };
     for (const auto& row : costs) {
-        check(near(luminance(each_channel(row.colour, top)) * 360, row.each_360, 0.51), "each channel's luminance at 360 and 550");
-        check(near(luminance(roll_off(row.colour, top)) * 360, row.largest_360, 0.51), "the roll-off's luminance at 360 and 550");
-        check(near(luminance(each_channel(row.colour, 5.0)) * 200, row.each_200, 0.51), "each channel's luminance at 200 and 1000");
-        check(near(luminance(roll_off(row.colour, 5.0)) * 200, row.largest_200, 0.51), "the roll-off's luminance at 200 and 1000");
+        check(near(luminance(roll_off_each(row.colour, top)) * 360, row.each_360, 0.51), "each channel's luminance at 360 and 550");
+        check(near(luminance(roll_off_largest(row.colour, top)) * 360, row.largest_360, 0.51), "the roll-off's luminance at 360 and 550");
+        check(near(luminance(roll_off_each(row.colour, 5.0)) * 200, row.each_200, 0.51), "each channel's luminance at 200 and 1000");
+        check(near(luminance(roll_off_largest(row.colour, 5.0)) * 200, row.largest_200, 0.51), "the roll-off's luminance at 200 and 1000");
     }
     double last_y = 0.0;
     for (double gain = 0.5; gain < 20.0; gain *= 1.01) {
-        const double y = luminance(roll_off(scaled(colour, gain), top));
+        const double y = luminance(roll_off_largest(scaled(colour, gain), top));
         check(y >= last_y - 1e-12, "for a given hue, the roll-off's luminance rises with exposure");
         last_y = y;
     }
     check(near(last_y * 360, 319, 0.51) && last_y < 1.0, "this orange stops near 319 nits, below the paper white");
 
-    // The blend in the guide's section 3: within the peak, and between the two methods in both hue and luminance.
+    // The strength from the room, as the guide's section 3 gives it: its values, rising, and no jump when a setting moves.
+    check(near(hue_keep(1.0), 0.28, 1e-12) && hue_keep(0.5) == hue_keep(1.0), "with no room, the strength is 0.28");
+    check(near(hue_keep(top), 0.283, 1e-3), "the strength at 360 and 550 nits");
+    check(near(hue_keep(5.0), 0.615, 1e-3), "the strength at 5 times");
+    check(near(hue_keep(6.25), 0.737, 1e-3), "the strength at 6.25 times");
+    check(near(hue_keep(8.0), 0.854, 1e-3), "the strength at 8 times");
+    check(near(hue_keep(12.5), 0.972, 1e-3), "the strength at 12.5 times");
+    check(hue_keep(40.0) > 0.9999 && hue_keep(40.0) <= 1.0, "with plenty of room, the strength is 1");
+    for (double x = 0.0; x <= 6.0; x += 0.01) {
+        check(hue_keep(std::exp2(x + 0.01)) >= hue_keep(std::exp2(x)), "the strength rises with the room");
+        check(hue_keep(std::exp2(x + 1.0)) - hue_keep(std::exp2(x)) <= 0.36, "the strength changes by at most 0.36 when the room doubles");
+    }
+
+    // The blend the present pass applies: within the peak, the SDR range untouched, and the two properties section 3 relies on.
+    for (double gain : {1.01, 1.5, 3.0, 6.0, 100.0}) {
+        for (double t : {top, 5.0, 12.5}) {
+            const Rgb c = scaled(colour, gain);
+            const Rgb e = roll_off_each(c, t), l = roll_off_largest(c, t), b = roll_off(c, t);
+            const double k = hue_keep(t);
+            check(max_channel(b) <= t + 1e-9 && near(max_channel(b), max_channel(l), 1e-12), "the blend keeps the largest channel and the peak");
+            check(near(luminance(e) - luminance(b), k * (luminance(e) - luminance(l)), 1e-9), "the luminance lost is k times the largest channel's");
+            check(near(b.g / b.r - c.g / c.r, (1 - k) * (e.g / e.r - c.g / c.r), 1e-9), "the drift toward white is (1 - k) times each channel's");
+        }
+    }
+    const Rgb within_blend = roll_off({1.0, 0.25, 0.0}, top);
+    check(within_blend.r == 1.0 && within_blend.g == 0.25 && within_blend.b == 0.0, "the blend leaves the SDR range alone");
+    const Rgb roomy = roll_off(scaled(colour, 3.0), 40.0), roomy_largest = roll_off_largest(scaled(colour, 3.0), 40.0);
+    check(near(roomy.g, roomy_largest.g, 1e-6), "with plenty of room, the blend is the largest channel");
     const Rgb orange3{3.0, 1.5, 0.375};
-    const Rgb largest3 = roll_off(orange3, top), each3 = each_channel(orange3, top);
-    const Rgb even{(largest3.r + each3.r) / 2, (largest3.g + each3.g) / 2, (largest3.b + each3.b) / 2};
-    check(max_channel(even) <= top + 1e-9, "the blend stays within the peak");
-    check(near(luminance(even) * 360, 391, 0.51), "the even blend's luminance");
-    check(near(even.r / even.g, 1.46, 0.01), "the even blend's R:G");
-    check(luminance(largest3) < luminance(even) && luminance(even) < luminance(each3), "the blend's luminance is between the two");
+    const Rgb blend3 = roll_off(orange3, top);
+    check(near(luminance(blend3) * 360, 424, 0.51), "the orange at 360 and 550: luminance");
+    check(near(blend3.r / blend3.g, 1.30, 0.01), "the orange at 360 and 550: R:G");
+    const Rgb scrgb = encode_scrgb(orange3, lv);
+    check(near(scrgb.r / scrgb.g, blend3.r / blend3.g, 1e-9) && scrgb.r * 80 <= 550 + 1e-6, "the output is the blend, within the peak");
 
     // The storage curve: the sRGB curve up to 1, the same value and slope at 1, invertible, and small far above 1.
     check(near(store_encode(1.0), 1.0, 1e-12), "the storage curve at 1");

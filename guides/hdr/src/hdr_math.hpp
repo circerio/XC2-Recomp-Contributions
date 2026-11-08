@@ -61,13 +61,34 @@ inline double soft_shoulder(double l, double top) {
     return 1.0 + room * (1.0 - std::exp(-(l - 1.0) / room));
 }
 
+// The shoulder on each channel on its own. It keeps more brightness, but it squeezes the largest channels most, so bright
+// colours drift toward yellow and white near the peak.
+inline Rgb roll_off_each(const Rgb& linear, double top) {
+    return per_channel(linear, [&](double l) { return soft_shoulder(l, top); });
+}
+
 // The shoulder on the largest channel, with every channel scaled by the same factor, so that the ratios between channels, and
-// with them the hue, do not change. Applying soft_shoulder to each channel on its own would squeeze the largest channels most,
-// and bright colours would drift toward yellow and white near the peak. The cost is brightness in saturated colours, which the
-// guide's section 3 lists along with a blend of the two. We learned this from xcx-recomp's PR #103 (jmars125).
-inline Rgb roll_off(const Rgb& linear, double top) {
+// with them the hue, do not change. The cost is brightness in saturated colours. We learned this from xcx-recomp's PR #103
+// (jmars125).
+inline Rgb roll_off_largest(const Rgb& linear, double top) {
     const double m = max_channel(linear);
     return m <= 1.0 ? linear : scaled(linear, soft_shoulder(m, top) / m);
+}
+
+// How much of roll_off_largest to take, from the room above paper white (`top`, the peak over the paper white): 0.28 with no
+// room, rising smoothly to 1 when there is plenty. Fitted on our frames so that the 95th percentile of the luminance lost
+// against roll_off_each stays within 15% (guide, section 3). The 15% is a choice, not a finding.
+inline double hue_keep(double top) {
+    return 1.0 - 0.72 * std::exp(-std::pow(std::log2(std::max(top, 1.0)) / 2.64, 3.65));
+}
+
+// What the present pass applies: the two results blended by hue_keep. Both have the same largest channel, so the blend has it
+// too and stays within the peak. Per pixel, the luminance lost against roll_off_each is hue_keep times what roll_off_largest
+// loses, and the drift of the channels toward white is (1 - hue_keep) times what roll_off_each gives.
+inline Rgb roll_off(const Rgb& linear, double top) {
+    const double k = hue_keep(top);
+    const Rgb each = roll_off_each(linear, top), largest = roll_off_largest(linear, top);
+    return {each.r + k * (largest.r - each.r), each.g + k * (largest.g - each.g), each.b + k * (largest.b - each.b)};
 }
 
 struct Levels {
