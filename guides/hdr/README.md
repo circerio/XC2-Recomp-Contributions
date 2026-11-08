@@ -22,7 +22,7 @@ Each result says how we know it:
 | **HDR with exclusive fullscreen** | It starts, gets an HDR10 swapchain and runs with no errors. [measured] **Nobody has checked the picture.** |
 | **HDR with frame generation** | Not tested. |
 | **HDR with an upscaler** | Not checked as a combination. |
-| **The roll-off in this guide** | The blend in section 3 and the other approaches there were measured on frames dumped from the game, and a test build's shader matched the calculation on those frames. Nobody has looked at any of them on a screen. Our main line still compresses each channel on its own (section 5). |
+| **The roll-off in this guide** | The blend in section 3 and the other approaches there were measured on frames dumped from the game. Our main line now uses the blend, and on bright displays the knee described there; its shader's output matched the calculation on daytime frames. Nobody has looked at any of them on a screen, including the two our main line uses (section 5). |
 | **Very bright scenes** | We never identified the sun's disc in a frame, only the brightest direction. In an open daytime sky the picture sits close to the peak, and nobody has judged how that looks. |
 | **Monitors other than this one** | A person has only looked at a 550-nit peak. A 1000-nit peak was only run in headless tests, read back as numbers. We don't know whether the reported peak changes when a monitor changes HDR mode. |
 | **Other screens** | The highlight pass was checked in a dusk scene and in daytime scenes. We have not confirmed that menus, cutscenes, night scenes and interiors go through the same tone map. |
@@ -36,7 +36,7 @@ Each result says how we know it:
 4. If the game has a linear scene before its tone map, use that. Don't try to reconstruct highlights from the SDR result.
 5. Let the game's own tone map run as it is, and draw the clipped pixels again with your own pass. You then ship no modified game shader.
 6. Scale a clipped colour to 1 in its largest channel to keep its hue. Clipping each channel turns bright colours yellow and then white.
-7. Near the peak, decide how to compress. Compressing each channel moves the hue toward white and keeps more brightness. Compressing on the largest channel keeps the hue and gives up brightness in saturated colours. We blend the two, with a strength set from the peak over the paper white, because the right trade-off depends on the display (section 3).
+7. Near the peak, decide how to compress. Compressing each channel moves the hue toward white and keeps more brightness. Compressing on the largest channel keeps the hue and gives up brightness in saturated colours. We blend the two, with a strength set from the peak over the paper white, because the right trade-off depends on the display. On bright displays, from about 6 to 10 times the paper white, we also start the curve later, at BT.2390's knee, which keeps most of the brightness the blend gives up there (section 3).
 8. If the post-processing chain works on gamma-encoded values, store highlights with a curve that grows slowly, so that later passes don't meet huge numbers.
 
 ## 2. Stage 1: the SDR picture on an HDR swapchain
@@ -147,7 +147,7 @@ What it gives on HDR frames dumped from the game, over highlight pixels (largest
 
 We took the idea of a strength from the `hdr_hue` setting in [PR #103 of xcx-recomp](https://github.com/jmars125/xcx-recomp/pull/103) by jmars125 (0 to 100, 50 by default). What it blends is different from the formula above: above SDR white and before its roll-off, it moves the hue-kept colour toward the game's own SDR result at the same luminance, fading in as the largest channel goes from 1 to 2. Setting the strength from the room, the function and its 15% rule are our own, fitted on our frames.
 
-We learned the largest-channel roll-off from reading the same PR. Our first version, and the first version of this guide, compressed each channel, and **our main line still does**: see section 5.
+We learned the largest-channel roll-off from reading the same PR. Our first version, and the first version of this guide, compressed each channel. **Our main line now uses the blend above**; what section 5 describes seeing comes from before that.
 
 **Other approaches we compared.** We also compared other ways to treat highlights near the peak, on the same kind of frames, by numbers only: nobody has looked at any of them on a screen. The checks were written down before we judged any frames:
 
@@ -162,19 +162,34 @@ We revised these checks once, after the first round:
 - Small changes are measured as colour differences (ΔE_ITP) instead of code steps.
 - An approach only has to pass where it is offered.
 
-The knee with the same `k` was added after that round too. Because of this, every approach that passed was checked again, with the same rules, on frames from scenes it had not been judged on.
+The knee with the same `k` was added after that round too. Because of this, every approach that passed was checked again, with the same rules, on new frames from scenes it had not been judged on. Those new frames had too few bright highlights above about 10 times the room, so we checked the knee once more on a second set of new frames with brighter highlights, again with the same rules. Its frames were picked by how many bright pixels their input had, before any approach's result was looked at.
 
 | Approach | What it keeps | What it costs | Where it held up |
 |---|---|---|---|
 | **Compressing only the luminance** in a perceptual space (Oklab lightness, or ICtCp with BT.2390's curve), and reducing saturation where a colour does not fit | All the brightness. From about 4 times the room, the hue about as well as the blend or better | With little room, saturated skies go almost white: at 360 and 550 nits the median saturation of daytime highlights fell by 98 to 99.5%. With more room, the most saturated colours still lose more than with the blend: a 95th percentile of 55% against 36% at 4 times, and 24% against 8% at 8 times. From 3.75 to 4.2 times, it amplified small exposure changes beyond the limit | 5 to 6.25 times on the first frames. It was not checked on new frames: we took one approach of each kind further, and the one toward white below held over a wider range |
-| **Starting the shoulder at BT.2390's knee**, with the same `k` | Most of the brightness the blend gives up on bright displays: from 6.25 to 10 times, the 95th percentile of the luminance loss fell from 5–14% to 0–8% | Up to 0.4° more hue shift and 2.2 points more saturation loss | 6.25 to 10 times, also on new frames |
-| **The same knee, then toward white**, more the further a colour is beyond the peak | About the same brightness, and almost no hue shift, because the brightest colours go white | Up to 6.6 points more saturation loss | 8 to 11.1 times, also on new frames |
+| **Starting the shoulder at BT.2390's knee**, with the same `k` | Most of the brightness the blend gives up on bright displays: from 6.25 to 10 times, the 95th percentile of the luminance loss fell from 5.4–13.8% to 0–8.0% on the first new frames, and from 12.2–15.8% to 0–9.4% on the brighter ones | Up to 0.4° more hue shift and 2.3 points more saturation loss | 6.25 to 10 times on all three sets of frames. Also 12.5 to 25 times on the brighter frames, but not at 11.1 times, between the two (below) |
+| **The same knee, then toward white**, more the further a colour is beyond the peak | About the same brightness, and almost no hue shift, because the brightest colours go white | Up to 6.6 points more saturation loss | 8 to 11.1 times, also on the first new frames. Not run on the brighter ones |
 | **Moving the hue back to the scene's** in Oklab, keeping the blend's lightness and chroma (the principle of RenoDX's hue correction) | The hue, on every display | More saturation loss, and with little room more than 15% luminance loss | 4.2 to 5.6 times on the first frames, but on new frames it no longer beat the blend |
 | **Local tone mapping** that keeps the detail inside highlights | Some detail | Its masks moved with the exposure, so it failed the exposure check everywhere | Nowhere |
 
 - BT.2390's knee is `1.5 * PQ(peak) - 0.5` in PQ, never below the paper white. Below about 4 times the room it sits at the paper white, so it is the blend itself. It only changes where the curve starts, which is computed once per frame.
-- Above about 10 times, our new frames had too few bright highlights to tell the approaches apart.
-- Our main line uses none of these alternatives.
+- Where the knee and the knee toward white both held up, they came out almost the same, so we went with the knee, the simpler of the two.
+
+**Why the knee stops at 10 times.** At 360 and 4000 nits (11.1 times the room), the knee failed the check on reversals between neighbouring pixels on both sets of new frames: 0.322% against a limit of 0.268% on the first, and 0.2282% against 0.2280% on the brighter ones. The reversals sit where a very bright sky meets a dark edge: of two neighbouring sky pixels, the brighter and more saturated one is compressed more and comes out darker. The blend has the same reversals, about a third as many. With a 4000-nit peak the knee sits highest relative to the room, so at 11.1 times its shoulder is the shortest of all the settings; the same peak with more room passed that check. The median reversal is about 3 steps of 10-bit PQ, and nobody has looked at whether it is visible. Because 11.1 times failed, the range stops at 10, and 12.5 to 25 times is left for later.
+
+**What our main line uses.** The blend above, and on bright displays the knee with the same `k`. This is the rule we settled on; our main line is still moving its upper end to it (below the table):
+
+| Room (peak ÷ paper white) | Shoulder |
+|---|---|
+| Below 5 times | The blend |
+| 5 to 6.25 times | A mix of the two results, more of the knee as the room grows, linear in log2 of the room. The knee passed the first four checks above here, on the original frames and the first new ones, but did not clearly beat the blend |
+| 6.25 to 10 times | The knee |
+| 10 to 12.5 times | A mix again, back to the blend alone at 12.5. At 360 and 4000 nits the mix is about half the knee (0.53), and at that weight it passed every check on all three sets of frames |
+| 12.5 times and above | The blend |
+
+- The mixes mean that moving the peak or paper white across these points doesn't switch the picture in one step.
+- Our main line is still changing its upper mix to 10 to 12.5 times. Until that lands, it fades back to the blend between 8.93 and 10 times.
+- The reference code in this guide has only the blend. Our main line uses none of the other alternatives.
 
 ## 4. Stage 2: keeping highlights
 
@@ -226,14 +241,14 @@ v = 1 + c * ln(1 + k * (L - 1) / c)        c = 0.5, k = 1.055 / 2.4
 
 ## 5. The choice: hue or white
 
-> **Our main line still compresses each channel on its own. The picture with the blend in this guide has not been verified: nobody has looked at it.** Everything we describe seeing below comes from the main line, so it is not what the reference code in this guide draws.
+> **Everything we describe seeing below was seen while our main line still compressed each channel on its own. It now uses the blend in this guide, and on bright displays the knee (section 3); nobody has looked at either yet.**
 >
 > - Near the peak, compressing each channel pushes colours toward yellow and white (section 3). We measured it on a lamp face whose scene colour is a golden orange (HSV hue 46.5°; pure yellow is 60°). With each channel compressed, it came out at 50.6° at 200 and 550 nits, the levels it was looked at with, and at 55.5° at 360 and 550 nits; the blend gives 48.9° and 52.3°. [measured] So at the levels it was seen with, its yellow is mostly the scene's own; at 360 and 550 nits, it would be mostly the shoulder's.
 > - Compressing each channel also keeps more brightness in saturated colours. With the blend, highlight pixels lose up to about 15% of their luminance at the 95th percentile (section 3).
 
 Keeping the hue means a lamp's core stays bright yellow instead of going white, and a daytime sky stays blue instead of washing out. Rolling highlights toward white with brightness ("path to white") is the other option, and closer to how the SDR picture looks.
 
-We chose the hue. What that looked like in our main line, where the highlight pass keeps the ratios between channels and the shoulder then moves them near the peak: [seen, dusk scene; dumps, daytime]
+We chose the hue. What that looked like in our main line before the blend, when the highlight pass kept the ratios between channels and the shoulder then moved them near the peak: [seen, dusk scene; dumps, daytime]
 
 - Lamp faces have a clear edge and their frames are visible, where SDR shows a white core with a soft yellow bloom over the frame. The values come from the game's own scene, so this isn't a rendering error, but it is different from the game's SDR style.
 - A daytime sky that SDR clips to a large white area keeps its blue and the layers of its clouds. It is much bluer than the SDR picture.
@@ -261,7 +276,7 @@ Results for stage 1, over 6 frames in each output. Nothing is above SDR white in
 
 The HDR10 bias near white is about half a 10-bit PQ code step at that brightness, so it's the format's precision and not a mistake.
 
-**These limits only apply to stage 1.** Stage 2 changes some pixels on purpose, and our bias and content checks were not updated to leave those pixels out, so they fail on stage 2 as expected. For stage 2 we looked at how many pixels rose above the paper white and how far. These numbers come from our main line, with each channel compressed on its own, and we have not measured them again with the blend in section 3: [measured]
+**These limits only apply to stage 1.** Stage 2 changes some pixels on purpose, and our bias and content checks were not updated to leave those pixels out, so they fail on stage 2 as expected. For stage 2 we looked at how many pixels rose above the paper white and how far. These numbers come from our main line before the blend in section 3, when each channel was compressed on its own, and we have not measured them again with the blend: [measured]
 
 | Scene | Levels | Pixels above paper white | Brightest |
 |---|---|---|---|
