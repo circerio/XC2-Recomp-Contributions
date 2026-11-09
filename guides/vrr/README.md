@@ -1,7 +1,8 @@
 # Variable refresh rate (G-SYNC / FreeSync) in a native Vulkan PC port
 
-**Status: first version.** Sections 2, 3, 4 and 6 describe things we have seen work on the machine below.
-**[Section 5](#5-the-refresh-meter-jumps-at-a-locked-frame-rate-pending-verification) is still waiting on verification.**
+**Status:** sections 2 to 6 describe things we have seen work or measured on the machine below.
+[Section 5](#5-the-refresh-meter-jumps-at-a-locked-frame-rate) was waiting on verification in the first version. It now has measured
+results, and its fix is on by default in our main line.
 
 This describes what we did and what we saw while adding variable refresh rate (VRR) to a native Windows port that presents
 through Vulkan. It is meant for other people porting a game the same way. You do not need any private code or game data to
@@ -29,7 +30,7 @@ Each result below says how we know it:
 5. Check that VRR is on with the driver's indicator and the monitor's own display, not with present timing. We read
    the timing and concluded VRR was off. It was on. [seen]
 6. If a monitor's refresh meter jumps around at a locked frame rate, look at the intervals between the actual flips, not
-   at the thread that paces the game. See section 5, which is still waiting on verification.
+   at the thread that paces the game. Holding each flip to a schedule evened them out for us. [measured, section 5]
 7. When you test FIFO on an unattended machine, keep the display on. With the display off, FIFO ran at one frame every
    250 ms and looked like a bug in the code. [measured]
 
@@ -111,10 +112,7 @@ What does work:
    while VRR is active.
 3. Use the monitor's own refresh display. Cap the game at 144 on a 240 Hz monitor: it should read about 144, not 240.
 
-## 5. The refresh meter jumps at a locked frame rate (pending verification)
-
-> **This section is not a finished result.** The cause below is what we have found so far. The fix has only been tried in short runs, longer
-> measurements have not finished, and it is off by default in our own build. We will update this section when they are done.
+## 5. The refresh meter jumps at a locked frame rate
 
 The symptom: at a 60 fps cap, the refresh meter of the monitor kept jumping between about 60 and 120, sometimes past 200. The
 picture did not visibly stutter, only the number moved. At a 144 cap the meter was normal. [seen]
@@ -132,7 +130,7 @@ What we found, in three layers:
    compensation, but we cannot see what the driver does and have not proven it. [inferred]
 3. **Spikes in the work.** Turning the camera roughly doubled the render thread's work, and that is where the frames over the panel's
    limit gathered. Moving texture copies to a worker and sub-allocating images brought their number down a lot. [measured] (Both are
-   separate pieces of work and are not part of this guide, and neither is on by default in our build yet. Sub-allocating through VMA
+   separate pieces of work and are not part of this guide; both are now on by default in our build. Sub-allocating through VMA
    follows what xcx-recomp does.)
 
 ### Keeping a schedule for the flips
@@ -141,7 +139,10 @@ What we found, in three layers:
 starts the schedule again from itself, instead of shortening the next interval. The 2 ms allowance stops a timer's
 lateness from lowering the frame rate.
 
-What someone watching the monitor's meter saw at a 60 fps cap, in runs of about 30 seconds: [seen]
+It stays out of the way in two cases. With no frame rate cap there is no schedule to keep. And while a frame generation library
+paces the presents itself, the schedule leaves the timing to it, so the two do not fight over it.
+
+What someone watching the monitor's meter saw at a 60 fps cap, in short runs of about 30 seconds while we were working on this: [seen]
 
 - **Pacing only the game thread:** it jumped past 100 even when standing still.
 - **The flip schedule:** very steady when standing still, but it still jumped when moving and turning, and once stuck at 120.
@@ -163,6 +164,27 @@ through FlipPacer        15.66   16.67   16.67   16.67   21.67          0       
 The average latency in the last row is the model's worst case: nothing in it ever lets the schedule catch up again, so after the largest
 spike every frame keeps that delay. In our short real tests the player noticed no change in feel, but we have not measured latency. Measure
 it on your own game before adopting this.
+
+### What we measured
+
+We then compared the same build with the schedule on and with it turned off: a 60 fps cap, borderless, frame generation off, one run
+of each lasting several minutes. PresentMon's display times give the interval between frames actually reaching the screen. [measured]
+
+- **Off:** 60 frames a second still reached the screen, but only 76.1% of the intervals were within half a millisecond of 16.67 ms. Most
+  of the rest landed one refresh of the 240 Hz panel early or late, at 12.5 or 20.8 ms, all through the run and not only when the camera
+  turned. The presents themselves came a little early or late, and their frames reached the screen one refresh sooner or later.
+- **On:** 99.6% of the intervals were within half a millisecond of 16.67 ms. Nearly all of the rest fell in the short stretch where a new
+  area loaded and the camera turned.
+- **The longest gaps were about the same either way**, and the longest of all came while loading a new area. The schedule evens out
+  the ordinary frames; it does not remove spikes in the work.
+
+In exclusive fullscreen at a 60 fps cap, the schedule held as well: the few frames that missed it were ones the game itself submitted
+late, and the schedule started again from them as designed. With no cap it stayed out of the way, and it stepped aside while frame
+generation was producing frames. [measured] That last check was made in a test build, since frame generation is not in our main line
+yet.
+
+These are intervals on the screen, not the meter, and nobody watched the meter during these runs. We once saw it sit at 120 while the
+flips were evenly spaced (layer 2 above), so even intervals alone may not keep it still on every monitor. [inferred]
 
 ## 6. A testing trap: FIFO with the display off
 

@@ -12,7 +12,7 @@ This work stands on what other people have published. In particular, **Ryujinx**
 
 | Topic | What it is | Status |
 |---|---|---|
-| [Variable refresh rate](guides/vrr) | Guide with reference code: present modes, the frame rate cap, verifying VRR, and a refresh meter that jumps at a locked frame rate | Tested on one NVIDIA machine; the part on the jumping meter is still waiting on verification |
+| [Variable refresh rate](guides/vrr) | Guide with reference code: present modes, the frame rate cap, verifying VRR, and a refresh meter that jumps at a locked frame rate | Tested on one NVIDIA machine; the guide lists what has not been verified |
 | [HDR output](guides/hdr) | Guide with reference code: HDR10 and scRGB from a game made for SDR, peak brightness and paper white, keeping highlights and their hue | Tested on one NVIDIA machine; the guide lists what has not been verified |
 | [Translator: branch elimination](translator/branch-phi) | Patch and test for a bug in Ryujinx's shader translator that makes a conditional assignment unconditional | Tested at translator level |
 
