@@ -30,7 +30,10 @@ Each result below says how we know it:
 5. Check that VRR is on with the driver's indicator and the monitor's own display, not with present timing. We read
    the timing and concluded VRR was off. It was on. [seen]
 6. If a monitor's refresh meter jumps around at a locked frame rate, look at the intervals between the actual flips, not
-   at the thread that paces the game. Holding each flip to a schedule evened them out for us. [measured, section 5]
+   at the thread that paces the game. Holding each flip to a schedule evened them out for us. [measured, section 5] The
+   meter then held at 60, but it still jumped now and then while the camera turned. [seen] With an empty pipeline cache, most of the
+   slow frames there built a graphics pipeline for the first time; with the cache filled, few did. So if the meter still jumps once
+   the flips are even, look at first-time pipeline builds before the pacing. [measured, section 5]
 7. When you test FIFO on an unattended machine, keep the display on. With the display off, FIFO ran at one frame every
    250 ms and looked like a bug in the code. [measured]
 
@@ -185,6 +188,32 @@ yet.
 
 These are intervals on the screen, not the meter, and nobody watched the meter during these runs. We once saw it sit at 120 while the
 flips were evenly spaced (layer 2 above), so even intervals alone may not keep it still on every monitor. [inferred]
+
+### What the meter showed afterwards
+
+Once the schedule was on by default in our main line, someone watched the monitor's own refresh display at a 60 fps cap, in
+borderless, on the monitor above. [seen]
+
+- Standing still and moving normally, it held at 60.
+- It still jumped upward now and then while moving and turning the camera. This was not often, and the person watching did not find it
+  distracting.
+
+To see what those moments were, we ran the same walk twice at a 60 fps cap in borderless, logging every frame next to PresentMon's
+display times: first with an empty pipeline cache, then again with the cache the first run had filled. [measured]
+
+- **With an empty cache, most single frames that went past the panel's lower limit had a graphics pipeline built for the first time on
+  that very frame.** [measured]
+- **With the cache filled, few did.** There were clearly fewer long intervals while moving. Most of those left came from texture uploads
+  while moving and from the game's own frames arriving late. [measured]
+- The schedule did not send frames early: intervals well short of 16.67 ms were very rare in both runs. [measured]
+
+The long intervals clustered at 20.83 ms plus whole refreshes of the 240 Hz panel (4.17 ms). That fits the panel showing the old frame
+again at its 48 Hz limit, and the meter reading high when it does. But PresentMon sees the flips, not the panel, and nobody watched the
+meter during these two runs. [inferred] A schedule can delay a flip but not bring a late one forward, so it cannot remove these frames.
+
+We have not watched the meter in exclusive fullscreen yet. Of the measurements in this section, only the exclusive fullscreen run
+under "What we measured" was made there, and it shows only that the schedule held. The two runs with the pipeline cache were in
+borderless, and we have not checked exclusive fullscreen this way.
 
 ## 6. A testing trap: FIFO with the display off
 
