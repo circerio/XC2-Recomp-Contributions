@@ -24,7 +24,7 @@ Each result says how we know it:
 | **HDR with an upscaler** | Not checked as a combination. |
 | **The roll-off in this guide** | The blend in section 3 and the other approaches there were measured on frames dumped from the game. Our main line now uses the blend, and on bright displays the knee described there; its shader's output matched the calculation on daytime frames. Nobody has looked at any of them on a screen, including the two our main line uses (section 5). |
 | **Very bright scenes** | We never identified the sun's disc in a frame, only the brightest direction. In an open daytime sky the picture sits close to the peak, and nobody has judged how that looks. |
-| **Monitors other than this one** | A person has only looked at a 550-nit peak. A 1000-nit peak was only run in headless tests, read back as numbers. We don't know whether the reported peak changes when a monitor changes HDR mode. |
+| **Monitors other than this one** | A person has only looked at a 550-nit peak. A 1000-nit peak was only run in headless tests, read back as numbers. We don't know whether the reported peak changes when a monitor changes HDR mode. Sending no metadata (section 2) was seen on this monitor in one HDR mode only. Some TVs outside a game or HGIG mode may assume bright content when there is no metadata and compress it themselves. On our monitor, changing the metadata in a window did not change the picture, so for such displays a game in a window may already be in that situation. [inferred] |
 | **Other screens** | The highlight pass was checked in a dusk scene and in daytime scenes. We have not confirmed that menus, cutscenes, night scenes and interiors go through the same tone map. |
 | **The right answer** | The console has no HDR output, so there is no reference to compare with. What highlights should look like is a choice, not a measurement. |
 
@@ -38,6 +38,8 @@ Each result says how we know it:
 6. Scale a clipped colour to 1 in its largest channel to keep its hue. Clipping each channel turns bright colours yellow and then white.
 7. Near the peak, decide how to compress. Compressing each channel moves the hue toward white and keeps more brightness. Compressing on the largest channel keeps the hue and gives up brightness in saturated colours. We blend the two, with a strength set from the peak over the paper white, because the right trade-off depends on the display. On bright displays, from about 6 to 10 times the paper white, we also start the curve later, at BT.2390's knee, which keeps most of the brightness the blend gives up there (section 3).
 8. If the post-processing chain works on gamma-encoded values, store highlights with a curve that grows slowly, so that later passes don't meet huge numbers.
+9. Don't set HDR metadata on the swapchain, and look at HDR in fullscreen as well as in a window. The metadata we sent turned the whole
+   picture grey in fullscreen, and a window hid it. [seen, section 2]
 
 ## 2. Stage 1: the SDR picture on an HDR swapchain
 
@@ -53,8 +55,27 @@ surface offers (`choose_output` in [`src/hdr_math.hpp`](src/hdr_math.hpp)):
 
 If neither is offered, stay in SDR and say why in the log. With the setting off, nothing here should run, and that is easy to check with your normal regression.
 
-If the device has `VK_EXT_hdr_metadata`, call `vkSetHdrMetadataEXT` once the swapchain exists. We set the primaries of the output's colour space (BT.2020 for HDR10, BT.709 for scRGB), a D65 white point, `maxLuminance` and
-`maxContentLightLevel` to the peak, `minLuminance` to 0, and `maxFrameAverageLightLevel` to the paper white.
+**Don't set HDR metadata on the swapchain.** Microsoft's [`SetHDRMetaData` page](https://learn.microsoft.com/en-us/windows/win32/api/dxgi1_5/nf-dxgi1_5-idxgiswapchain4-sethdrmetadata) no longer recommends it:
+Windows does not guarantee that the metadata reaches the monitor, and monitors do not handle it consistently. It recommends tone mapping
+into the range the monitor reports instead, which the shoulder in section 3 already does. [read] That page is about DXGI's
+`SetHDRMetaData`; we apply its advice to Vulkan's `vkSetHdrMetadataEXT`, which behaved the same way for us: changing it changed the
+picture in fullscreen, but not in a window. [seen]
+
+**What happened when we set it.** We used to call `vkSetHdrMetadataEXT` with `maxLuminance` and `maxContentLightLevel` at the peak,
+`minLuminance` at 0, and `maxFrameAverageLightLevel` at the paper white.
+- In fullscreen, with the peak at the 550 nits DXGI reported, or at 600, the whole picture turned grey, menus included. [seen] The logs
+  we kept show borderless fullscreen. For one check, whose log was overwritten, we did not record whether it was borderless or
+  exclusive.
+- Our own output had not changed. Nothing in a menu is brighter than the paper white, so at one paper white our menu frames came out
+  identical at the two peaks we compared. [measured] Only the metadata changed with the peak, so the grey came from the monitor's own
+  processing. [inferred]
+- In a window, which Windows composes, the picture did not turn grey. [seen]
+- The monitor's HDR mode was rated for 400 nits, and DXGI reported 550 for it (section 3). Metadata that said 550 or 600 turned the
+  picture grey; metadata that said 360 or 400 did not. [seen]
+- A test build that sends no metadata did not turn grey in the same settings. [seen] Our main line now sends none.
+
+If a platform requires metadata, describe what you actually output: `maxLuminance` and `maxContentLightLevel` at the peak you tone map
+to, and only with a peak you know the display can show. [inferred]
 
 A plain blit can't encode anything, so the HDR output has to go through a full-screen draw. If you use a swapchain proxy such as an upscaler's or a frame generator's, make sure the colour space reaches it; that combination is one of the things we have not verified.
 
@@ -79,6 +100,12 @@ With only this, the picture is the SDR picture at paper white brightness: no hig
 | Paper white | What Windows uses for SDR content | 200 nits | `DisplayConfigGetDeviceInfo` with `DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL`; 1000 in that API means 80 nits |
 
 [`src/windows_display_levels.hpp`](src/windows_display_levels.hpp) has both. They aren't per-frame calls, so ask when you create a swapchain. Offer fixed values as settings too; we allow 400 to 10000 nits for the peak and 80 to 500 for the paper white, and 0 means "ask the system".
+
+**The reported peak can be wrong for the current mode.** Microsoft's [`DXGI_OUTPUT_DESC1` page](https://learn.microsoft.com/en-us/windows/win32/api/dxgi1_6/ns-dxgi1_6-dxgi_output_desc1)
+says the value usually comes from the display's EDID, sometimes from an override, and that `MaxLuminance` is likely only valid for a
+small area of the panel. [read] Our monitor reported 550 nits, for a small area and for the full frame alike, in a mode named True Black
+400. [measured] We expect a peak of 400 to keep our own shoulder within what the panel can show in that mode, instead of the panel
+cutting off the top, but we have not checked it. [inferred] This is one more reason to keep the peak setting.
 
 **Why the paper white should follow Windows.** Our first default was a fixed 200 nits. Windows was showing SDR at 360 nits, so turning HDR on made the whole picture 1.8 times dimmer, and SDR looked more glaring than HDR. [seen] That comparison was unfair, and a player would make the same one. Following Windows means turning HDR on doesn't change the brightness of the SDR range.
 
@@ -284,6 +311,11 @@ The HDR10 bias near white is about half a 10-bit PQ code step at that brightness
 | Daytime, facing the open side | Paper white 360, peak 550 | Up to 32% | 555 nits |
 
 **A side effect in the SDR range.** With the intermediate targets in float, two 8-bit rounding steps are gone, and the sharpen pass amplifies the difference. Pixels within 1 of 255 of the stage 1 picture fell to about 41%, while those within 2 stayed at 90 to 97%, about what two separate runs differ by. We don't expect this to be visible, but it means the SDR range is no longer bit-identical. [inferred]
+
+**What these checks can't see.** They read your own pixels, and the grey picture in section 2 came from the monitor: our menu frames came
+out identical at different peaks, while on the screen the higher peak looked grey. [measured, seen] So also look at HDR on the screen,
+in fullscreen and in a window, at a peak equal to the paper white and at the peak the system reports. In a menu, only the metadata
+differs between those two. If you do send metadata, log the values every time you set them.
 
 ## 7. Known limits
 
