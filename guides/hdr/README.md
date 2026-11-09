@@ -177,7 +177,7 @@ The knee with the same `k` was added after that round too. Because of this, ever
 
 **Why the knee stops at 10 times.** At 360 and 4000 nits (11.1 times the room), the knee failed the check on reversals between neighbouring pixels on both sets of new frames: 0.322% against a limit of 0.268% on the first, and 0.2282% against 0.2280% on the brighter ones. The reversals sit where a very bright sky meets a dark edge: of two neighbouring sky pixels, the brighter and more saturated one is compressed more and comes out darker. The blend has the same reversals, about a third as many. With a 4000-nit peak the knee sits highest relative to the room, so at 11.1 times its shoulder is the shortest of all the settings; the same peak with more room passed that check. The median reversal is about 3 steps of 10-bit PQ, and nobody has looked at whether it is visible. Because 11.1 times failed, the range stops at 10, and 12.5 to 25 times is left for later.
 
-**What our main line uses.** The blend above, and on bright displays the knee with the same `k`. This is the rule we settled on; our main line is still moving its upper end to it (below the table):
+**What our main line uses.** The blend above, and on bright displays the knee with the same `k`, by this rule:
 
 | Room (peak ÷ paper white) | Shoulder |
 |---|---|
@@ -188,7 +188,6 @@ The knee with the same `k` was added after that round too. Because of this, ever
 | 12.5 times and above | The blend |
 
 - The mixes mean that moving the peak or paper white across these points doesn't switch the picture in one step.
-- Our main line is still changing its upper mix to 10 to 12.5 times. Until that lands, it fades back to the blend between 8.93 and 10 times.
 - The reference code in this guide has only the blend. Our main line uses none of the other alternatives.
 
 ## 4. Stage 2: keeping highlights
