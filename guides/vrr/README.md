@@ -206,6 +206,9 @@ display times: first with an empty pipeline cache, then again with the cache the
 - **With the cache filled, few did.** There were clearly fewer long intervals while moving. Most of those left came from texture uploads
   while moving and from the game's own frames arriving late. [measured]
 - The schedule did not send frames early: intervals well short of 16.67 ms were very rare in both runs. [measured]
+- Later, in a test build, converting new textures out of the console GPU's tiled layout on a background thread instead of on
+  the render thread clearly cut the slow frames from texture uploads while walking, at a small cost on frames without new
+  textures. It is now on by default in our main line. [measured]
 
 The long intervals clustered at 20.83 ms plus whole refreshes of the 240 Hz panel (4.17 ms). That fits the panel showing the old frame
 again at its 48 Hz limit, and the meter reading high when it does. But PresentMon sees the flips, not the panel, and nobody watched the
