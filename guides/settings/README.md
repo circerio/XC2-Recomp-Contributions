@@ -144,8 +144,8 @@ The reference code is [`src/settings_file.hpp`](src/settings_file.hpp).
 - **Show what runs.** A test switch, or a key such as F11 for fullscreen, can change a setting after the file was read.
   Our rows ask the runtime what it uses wherever it can tell.
 - **Two test switches.** One leaves the Options screen exactly as the game made it: no pages, no file replaced. The other
-  runs with every setting at its default and never reads or writes the file. Our regression runs use the second, so a
-  player's choices on the test machine never change a test.
+  runs with every setting at its default and never reads or writes the file. Our regression runs use the second, so
+  settings saved on the test machine never change a test.
 - **Defaults are what ran before.** Every new option started at what the game, or the port, did before the option
   existed. So the regression's reference pictures stayed valid with the settings code in. Where we later chose on purpose
   a default that changes the picture, the regression got reference pictures for that default too, and compares both.
