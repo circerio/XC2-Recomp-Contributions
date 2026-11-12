@@ -185,12 +185,14 @@ What testing taught us: [measured]
 - **Some rows have no values:** a row that opens a page, a key binding's row. Code that applied every row's value at
   start-up read the first value of an empty list, and a smoke test crashed at start-up. The reference code's tests
   include such a row.
+- **A value out of range is held to the limit, and the row says so.** Ours used to fall back to the default size without
+  a word, so choosing a higher value had no effect. [measured]
 
 ## 7. Reuse the game's own pieces
 
 - **Restoring the defaults** uses the game's own confirmation dialog and message. Yes restores the page in view only.
-  [measured] A setting whose default follows another one is cleared rather than set: dynamic resolution's default
-  depends on the render resolution, so it keeps following it.
+  [measured] A setting whose default follows others is cleared rather than set: dynamic resolution's default depends
+  on the render and output resolutions, so it keeps following them.
 - **The game's camera options** moved from their tab to a row of our controls page. The row opens the game's own camera
   panel, with the game's text, sliders and save path, and B there comes back to our page. An option changed this way
   wrote a save byte-identical to the same change from the game's original tab. [measured]

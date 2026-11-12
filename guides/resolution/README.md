@@ -32,8 +32,8 @@ A scale below is relative to the game's own pixels: the game's 1280x720 shown at
    tone mapping and the interface run at the output size. [section 5]
 5. When one pass binds attachments at two scales, make the smaller one larger, for good if the scene never uses it.
    [section 6]
-6. If the game lowers its own resolution, accept its smaller targets, and turn that off when the player picks a
-   resolution. [section 7]
+6. If the game lowers its own resolution, accept its smaller targets, and leave that off by default once the picture is
+   not at the game's own size. [section 7]
 7. Distance-field text gets blurrier with the output scale. Narrow its edge by the scale, up to 2. [section 8]
 
 ## 2. Which images get which scale
@@ -123,8 +123,18 @@ half the game's height and at most all of it (`screen_sized`).
 
 The game decides when to step down from its own GPU timer queries. What those measure in a port is not what they measured
 on the console: in ours, a busy machine made the game step down even at a high internal resolution, and every step's
-targets were made at that resolution. [measured] When the player sets an internal resolution, we turn the game's own
-stepping off: they asked for that size.
+targets were made at that resolution. [measured] So our main line leaves the game's own stepping off by default whenever
+the picture is not at the game's own size:
+
+- **The player chose an internal resolution.** They asked for that size.
+- **The output is larger than the game's 1280x720.** A 1280x720 scene shown at 3840x2160 is already stretched three
+  times, and the game's stepping took it lower still. [measured]
+- At the game's own 1280x720 output, with no internal resolution chosen, nothing changes: the game steps as it always
+  did.
+
+A player who wants the stepping anyway can turn it on in the menu, and that choice wins over the default, except while
+an upscaler or frame generation is on, which keeps the game's stepping off either way. The menu row says that it is off
+by default above 720p.
 
 ## 8. Distance-field text
 
