@@ -151,7 +151,7 @@ What someone watching the monitor's meter saw at a 60 fps cap, in short runs of 
 - **The flip schedule:** very steady when standing still, but it still jumped when moving and turning, and once stuck at 120.
 - **The flip schedule and fewer work spikes:** steady while turning the camera, passing 100 about once in 10 seconds of turning.
 
-**Read this for its direction only.** The runs were short, what the player was doing differs between them, and this is someone
+**Read this for its direction only.** The runs were short, what the person playing was doing differs between them, and this is someone
 watching a number, not a measurement.
 
 [`tests/sim_flip_pacing.cpp`](tests/sim_flip_pacing.cpp) shows the mechanism on a synthetic trace. It proves nothing about a real
@@ -165,7 +165,7 @@ through FlipPacer        15.66   16.67   16.67   16.67   21.67          0       
 ```
 
 The average latency in the last row is the model's worst case: nothing in it ever lets the schedule catch up again, so after the largest
-spike every frame keeps that delay. In our short real tests the player noticed no change in feel, but we have not measured latency. Measure
+spike every frame keeps that delay. In our short real tests the person playing noticed no change in feel, but we have not measured latency. Measure
 it on your own game before adopting this.
 
 ### What we measured
@@ -183,8 +183,8 @@ of each lasting several minutes. PresentMon's display times give the interval be
 
 In exclusive fullscreen at a 60 fps cap, the schedule held as well: the few frames that missed it were ones the game itself submitted
 late, and the schedule started again from them as designed. With no cap it stayed out of the way, and it stepped aside while frame
-generation was producing frames. [measured] That last check was made in a test build, since frame generation is not in our main line
-yet.
+generation was producing frames. [measured] That last check was made in a test build, before frame generation was part of our main
+line.
 
 These are intervals on the screen, not the meter, and nobody watched the meter during these runs. We once saw it sit at 120 while the
 flips were evenly spaced (layer 2 above), so even intervals alone may not keep it still on every monitor. [inferred]

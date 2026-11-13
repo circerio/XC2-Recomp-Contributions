@@ -183,7 +183,9 @@ What testing taught us: [measured]
 - **Hide a value field instead of writing an empty text into it.** Our UI kept the previous page's word when it was given
   an empty one.
 - **Some rows have no values:** a row that opens a page, a key binding's row. Code that applied every row's value at
-  start-up read the first value of an empty list, and a smoke test crashed at start-up. The reference code's tests
+  start-up read the first value of an empty list, and a smoke test crashed at start-up. Left and right on such a row
+  crashed the game too: its choice could still be 0, and the step divided by the number of values, zero, before it
+  checked for the limit. Check for fewer than two values first and play the limit sound. The reference code's tests
   include such a row.
 - **A value out of range is held to the limit, and the row says so.** Ours used to fall back to the default size without
   a word, so choosing a higher value had no effect. [measured]
