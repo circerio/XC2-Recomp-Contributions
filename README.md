@@ -29,6 +29,7 @@ TheMonadoGuy for that inspiration.
 | [Internal and output resolution](guides/resolution) | Guide with reference code: the scene at its own resolution and the interface at the screen's, shaders kept in the game's pixels, and sharper distance-field text | Tested on one NVIDIA machine; the guide lists what has not been verified |
 | [Save protection and crash reports](guides/saves) | Guide with reference code: a journal that brings back the console's save commit, backups before each run, and crash reports that say what they contain | Tested on one Windows machine; the guide lists what has not been verified |
 | [PC settings in the game's own menu](guides/settings) | Guide with reference code: extra pages in the game's own Options screen without shipping game files, PC settings kept out of the save data, rows that say why they are greyed, and key rebinding | Tested on one Windows machine; the guide lists what has not been verified |
+| [TAA jitter at a higher internal resolution](guides/taa-jitter) | Guide with reference code: the game's own TAA jitter scaled to the internal resolution, upscalers' jitter left alone, and checking still edges, flicker and trails against a same-build baseline | Tested on one NVIDIA machine; the guide lists what has not been verified |
 | [Translator: branch elimination](translator/branch-phi) | Patch and test for a bug in Ryujinx's shader translator that makes a conditional assignment unconditional | Tested at translator level |
 
 ## Ground rules

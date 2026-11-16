@@ -35,6 +35,8 @@ A scale below is relative to the game's own pixels: the game's 1280x720 shown at
 6. If the game lowers its own resolution, accept its smaller targets, and leave that off by default once the picture is
    not at the game's own size. [section 7]
 7. Distance-field text gets blurrier with the output scale. Narrow its edge by the scale, up to 2. [section 8]
+8. If the game's own TAA jitters by a fraction of the game's pixel, divide its jitter by the internal scale, or the TAA
+   blurs instead of smoothing edges. [[TAA jitter guide](../taa-jitter)]
 
 ## 2. Which images get which scale
 
