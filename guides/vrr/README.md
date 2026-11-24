@@ -242,7 +242,8 @@ If you test without a person at the machine, wake the display, keep it on, and r
 - **Reflex together with VRR.** Reflex was on during that check, because DLSS frame generation needs it. [read, measured] We have not
   compared VRR with Reflex on and off, and have not measured latency.
 - **Why a decorated window did not engage VRR.** Not investigated.
-- **HDR with exclusive fullscreen.** Runs without errors, but nobody has checked the picture.
+- **HDR with exclusive fullscreen.** Runs without errors, but nobody has judged the picture. The [HDR guide](../hdr) says what was
+  looked at.
 - **Flicker.** OLED panels can show brightness changes when VRR's rate swings widely. We did not study this.
 
 ## 8. Build and run the tests

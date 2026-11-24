@@ -19,13 +19,13 @@ Each result says how we know it:
 | Situation | What we know |
 |---|---|
 | **AMD and Intel GPUs** | Nothing has been run on them. |
-| **HDR with exclusive fullscreen** | It starts, gets an HDR10 swapchain and runs with no errors. [measured] **Nobody has checked the picture.** |
-| **HDR with frame generation** | Not tested. |
-| **HDR with an upscaler** | Not checked as a combination. |
-| **The roll-off in this guide** | The blend in section 3 and the other approaches there were measured on frames dumped from the game. Our main line now uses the blend, and on bright displays the knee described there; its shader's output matched the calculation on daytime frames. Nobody has looked at any of them on a screen, including the two our main line uses (section 5). |
+| **HDR with exclusive fullscreen** | It starts, gets an HDR10 swapchain and runs with no errors. [measured] In the check that the picture no longer turned grey (section 2), the game was switched between borderless, a window and exclusive fullscreen. The answer was that it did not turn grey, without a separate answer for exclusive. [seen] **Nobody has judged the picture itself there.** |
+| **HDR with frame generation** | **Nobody has judged the picture.** FSR frame generation ran on an HDR10 and on an scRGB swapchain, took the swapchain over again each time HDR was switched on or off, and was given our own peak as its brightest level, because it would otherwise take that from the metadata, which we don't send. In a test build, second by second along the same route, the overall brightness differed from a run with frame generation off by about 0.01% at the median, and by less than 1% in 264 of 340 seconds; whether single generated frames differ could not be measured. DLSS frame generation ran with HDR in borderless, on builds from before and after the fix in section 2, and in exclusive fullscreen on builds from before it. At 2x in borderless, after the fix, generated and rendered frames differed by about 0.06% of the mean brightness at the median. [measured] HDR was also on while a person checked DLSS frame generation together with VRR ([VRR guide](../vrr)), but that check was not about the HDR picture. |
+| **HDR with an upscaler** | DLSS and FSR super resolution were each on together with HDR in several plays. [measured] Nobody was asked about the HDR picture there. |
+| **The roll-off in this guide** | The blend in section 3 and the other approaches there were measured on frames dumped from the game. Our main line now uses the blend, and on bright displays the knee described there; its shader's output matched the calculation on daytime frames. Nobody has compared any of them with one another on a screen. One person has compared HDR on with HDR off on one monitor, with the blend running: in a test build (mostly at paper white 360 and peak 550, and other levels were tried too), and later in our main line (360 and 550). We write no finding from that. It compares HDR with SDR, not one roll-off with another, so nobody has judged the roll-off itself (section 5). Numbers for HDR on against HDR off in one interior are in section 6. |
 | **Very bright scenes** | We never identified the sun's disc in a frame, only the brightest direction. In an open daytime sky the picture sits close to the peak, and nobody has judged how that looks. |
-| **Monitors other than this one** | A person has only looked at a 550-nit peak. A 1000-nit peak was only run in headless tests, read back as numbers. We don't know whether the reported peak changes when a monitor changes HDR mode. Sending no metadata (section 2) was seen on this monitor in one HDR mode only. Some TVs outside a game or HGIG mode may assume bright content when there is no metadata and compress it themselves. On our monitor, changing the metadata in a window did not change the picture, so for such displays a game in a window may already be in that situation. [inferred] |
-| **Other screens** | The highlight pass was checked in a dusk scene and in daytime scenes. We have not confirmed that menus, cutscenes, night scenes and interiors go through the same tone map. |
+| **Monitors other than this one** | A person has looked at a 550-nit peak, and once with the monitor in its 1000-nit mode and the peak set to 1000; we write no finding from it, and that run's log was not kept. A 1000-nit peak was also run in headless tests, read back as numbers. We don't know whether the reported peak changes when a monitor changes HDR mode. Sending no metadata (section 2) was seen on this monitor in one HDR mode only. Some TVs outside a game or HGIG mode may assume bright content when there is no metadata and compress it themselves. On our monitor, changing the metadata in a window did not change the picture, so for such displays a game in a window may already be in that situation. [inferred] |
+| **Other screens** | The highlight pass was checked in a dusk scene, in daytime scenes, and in one interior (section 6). We have not confirmed that menus, cutscenes, night scenes and other interiors go through the same tone map. |
 | **The right answer** | The console has no HDR output, so there is no reference to compare with. What highlights should look like is a choice, not a measurement. |
 
 ## 1. The short version
@@ -77,7 +77,7 @@ picture in fullscreen, but not in a window. [seen]
 If a platform requires metadata, describe what you actually output: `maxLuminance` and `maxContentLightLevel` at the peak you tone map
 to, and only with a peak you know the display can show. [inferred]
 
-A plain blit can't encode anything, so the HDR output has to go through a full-screen draw. If you use a swapchain proxy such as an upscaler's or a frame generator's, make sure the colour space reaches it; that combination is one of the things we have not verified.
+A plain blit can't encode anything, so the HDR output has to go through a full-screen draw. If you use a swapchain proxy such as an upscaler's or a frame generator's, make sure the colour space reaches it. We have run that with FSR frame generation's swapchain, on HDR10 and on scRGB (see the table above); nobody has judged the picture.
 
 ### The present pass
 
@@ -99,13 +99,21 @@ With only this, the picture is the SDR picture at paper white brightness: no hig
 | Peak | What the display reports | 1000 nits | DXGI `IDXGIOutput6::GetDesc1`, `MaxLuminance`, for the output showing the window |
 | Paper white | What Windows uses for SDR content | 200 nits | `DisplayConfigGetDeviceInfo` with `DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL`; 1000 in that API means 80 nits |
 
-[`src/windows_display_levels.hpp`](src/windows_display_levels.hpp) has both. They aren't per-frame calls, so ask when you create a swapchain. Offer fixed values as settings too; we allow 400 to 10000 nits for the peak and 80 to 500 for the paper white, and 0 means "ask the system".
+[`src/windows_display_levels.hpp`](src/windows_display_levels.hpp) has both. They aren't per-frame calls: ask when you create a swapchain, and ask for the paper white again when it may have changed.
+
+While HDR runs and the paper white follows Windows, our main line asks again when Windows announces a display or settings change (`WM_DISPLAYCHANGE`, `WM_SETTINGCHANGE`) and when the player opens our display settings. It also reads the value every two seconds, because we rely on no notice for Windows' brightness slider. In one play that reading went from 80 to 360 nits, and the paper white followed it. [measured] We can't tell from the log whether the slider moved or HDR was switched on in Windows.
+
+Windows' announcements and opening our display settings also make it ask for the surface's formats again, whether HDR is on or off. A person who switched HDR on and off in Windows while the game ran could turn HDR on in the game without a restart. [seen] If the surface still offers no HDR while Windows shows the display in HDR, our code makes the surface again, once. In that play the surface offered the HDR formats every time it was asked, so this part has not run yet. [measured]
+
+Offer fixed values as settings too; we allow 400 to 10000 nits for the peak and 80 to 500 for the paper white, and 0 means "ask the system".
 
 **The reported peak can be wrong for the current mode.** Microsoft's [`DXGI_OUTPUT_DESC1` page](https://learn.microsoft.com/en-us/windows/win32/api/dxgi1_6/ns-dxgi1_6-dxgi_output_desc1)
 says the value usually comes from the display's EDID, sometimes from an override, and that `MaxLuminance` is likely only valid for a
-small area of the panel. [read] Our monitor reported 550 nits, for a small area and for the full frame alike, in a mode named True Black
+small area of the panel. [read] Our monitor reported 550 nits, for a small area and for the full frame alike, in all but one of the plays whose logs we checked (below), in a mode named True Black
 400. [measured] We expect a peak of 400 to keep our own shoulder within what the panel can show in that mode, instead of the panel
 cutting off the top, but we have not checked it. [inferred] This is one more reason to keep the peak setting.
+
+Our main line asks for the peak only once per run. In one play the first ask gave 465.5 nits (265 for the full frame), and the peak stayed at 465.5 after the paper white went to 360. [measured] We think Windows' HDR was off at that ask. [inferred] So ask for the peak again when the surface's formats are asked again.
 
 **Why the paper white should follow Windows.** Our first default was a fixed 200 nits. Windows was showing SDR at 360 nits, so turning HDR on made the whole picture 1.8 times dimmer, and SDR looked more glaring than HDR. [seen] That comparison was unfair, and a player would make the same one. Following Windows means turning HDR on doesn't change the brightness of the SDR range.
 
@@ -176,7 +184,7 @@ We took the idea of a strength from the `hdr_hue` setting in [PR #103 of xcx-rec
 
 We learned the largest-channel roll-off from reading the same PR. Our first version, and the first version of this guide, compressed each channel. **Our main line now uses the blend above**; what section 5 describes seeing comes from before that.
 
-**Other approaches we compared.** We also compared other ways to treat highlights near the peak, on the same kind of frames, by numbers only: nobody has looked at any of them on a screen. The checks were written down before we judged any frames:
+**Other approaches we compared.** We also compared other ways to treat highlights near the peak, on the same kind of frames, by numbers only: nobody has judged any of them on a screen. The checks were written down before we judged any frames:
 
 - Nothing in the SDR range changes, bit for bit.
 - Nothing passes the peak, and a brighter input never comes out darker.
@@ -267,7 +275,7 @@ v = 1 + c * ln(1 + k * (L - 1) / c)        c = 0.5, k = 1.055 / 2.4
 
 ## 5. The choice: hue or white
 
-> **Everything we describe seeing below was seen while our main line still compressed each channel on its own. It now uses the blend in this guide, and on bright displays the knee (section 3); nobody has looked at either yet.**
+> **Everything we describe seeing below was seen while our main line still compressed each channel on its own. It now uses the blend in this guide, and on bright displays the knee (section 3); on a screen, a person has only compared the blend's HDR picture with HDR off, and nobody has judged the knee.**
 >
 > - Near the peak, compressing each channel pushes colours toward yellow and white (section 3). We measured it on a lamp face whose scene colour is a golden orange (HSV hue 46.5°; pure yellow is 60°). With each channel compressed, it came out at 50.6° at 200 and 550 nits, the levels it was looked at with, and at 55.5° at 360 and 550 nits; the blend gives 48.9° and 52.3°. [measured] So at the levels it was seen with, its yellow is mostly the scene's own; at 360 and 550 nits, it would be mostly the shoulder's.
 > - Compressing each channel also keeps more brightness in saturated colours. With the blend, highlight pixels lose up to about 15% of their luminance at the 95th percentile (section 3).
@@ -309,6 +317,12 @@ The HDR10 bias near white is about half a 10-bit PQ code step at that brightness
 | Dusk | Paper white 200, peak 1000 | 0.10 to 0.79% | 670 to 845 nits |
 | Daytime, looking at the sky | Paper white 360, peak 550 | 7 to 10% | 555 nits |
 | Daytime, facing the open side | Paper white 360, peak 550 | Up to 32% | 555 nits |
+
+**With the blend, in one interior.** On our main line, with the highlight pass drawing, we compared HDR on with HDR off in one interior with lamps, at paper white 360 and peak 550. [measured] The numbers are computed from the present shader's output in headless runs at 1280x720, with the HDR-off picture taken as sRGB with SDR white at 360 nits; no screen was involved, and a panel may not show these levels. HDR on and off are two runs of the same script, two presents apart, so not the same instant; a lamp's halo, which should be the same in both, agrees within about 2%.
+
+- A round lamp's core was 1.3 times as bright with HDR on (about 457 against 352 nits) and the rim between core and halo 1.1 times. Its brightest channel, at SDR white from the core to the rim with HDR off, fell from about 548 nits in the core to about 447 at the rim.
+- Between the four cells of one small lamp, the dips were 3 to 6% below the dimmer neighbouring cell with HDR off, and 16 to 22% with HDR on. The cells were brighter (about 345 nits with HDR off, 390 to 447 with it on); the gaps stayed within about 8%.
+- These compare HDR on with HDR off, so they show the highlight pass and the shoulder together, not one roll-off against another, and they hold only for these levels: with HDR on, the core's brightest channel (548 of 550 nits) is already on the shoulder. They are program output, not how it looks.
 
 **A side effect in the SDR range.** With the intermediate targets in float, two 8-bit rounding steps are gone, and the sharpen pass amplifies the difference. Pixels within 1 of 255 of the stage 1 picture fell to about 41%, while those within 2 stayed at 90 to 97%, about what two separate runs differ by. We don't expect this to be visible, but it means the SDR range is no longer bit-identical. [inferred]
 
