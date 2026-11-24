@@ -104,6 +104,12 @@ inline std::optional<float> texture_scale_value(Stage stage, float texture_scale
     return texture_scale;
 }
 
+// Whether a scaled image bound as a storage image keeps its scale. Only when a fragment stage reads it and nothing in the
+// shader writes it: its loads then get texture_scale_value, as texel fetches do. Anything else goes back to the game's
+// size for good, because writes are in the game's pixels and other stages' loads are not rescaled here. Decide "writes"
+// from the module (an image write, a texel pointer), not from a read-only mark a translator may not emit.
+inline bool storage_keeps_scale(Stage stage, bool shader_writes_it) { return stage == Stage::fragment && !shader_writes_it; }
+
 // ---- One pass, attachments at two scales ---------------------------------------------------------------------------
 
 struct Attachment {
@@ -112,18 +118,28 @@ struct Attachment {
     bool used_by_scene_pass;  // has this image ever been a target of a scene pass?
 };
 
-// promote: make the image again at the larger scale, for good, keeping its content (scaled). For an image the scene
-// never draws into, such as a depth buffer only the interface uses. twin: draw into a larger copy of a scene image for
-// the rest of the frame (see Twins). unresolved: neither applies; log it.
-enum class Fix { none, promote, twin, unresolved };
+// The scale a pass's attachments go to: the presented texture's when one is among them, else the largest. The presented
+// texture is the output, so it never grows past its own size, also when the scene is above it.
+inline float pass_scale(const std::vector<Attachment>& a) {
+    float top = 0.0f;
+    for (const Attachment& x : a) {
+        if (x.cls == ScaleClass::window) return x.scale;
+        top = std::max(top, x.scale);
+    }
+    return top;
+}
+
+// remake: make the image again at the pass's scale, for good, keeping its content (scaled). For an image the scene never
+// draws into, such as a depth buffer only the interface uses. twin: draw into a copy of a scene image at the pass's scale
+// for the rest of the frame (see Twins). unresolved: neither applies; log it.
+enum class Fix { none, remake, twin, unresolved };
 
 inline std::vector<Fix> fix_pass(const std::vector<Attachment>& a) {
-    float top = 0.0f;
-    for (const Attachment& x : a) top = std::max(top, x.scale);
+    const float to = pass_scale(a);
     std::vector<Fix> out;
     for (const Attachment& x : a) {
-        if (x.scale == top) out.push_back(Fix::none);
-        else if (!x.used_by_scene_pass) out.push_back(Fix::promote);
+        if (x.scale == to) out.push_back(Fix::none);
+        else if (!x.used_by_scene_pass) out.push_back(Fix::remake);
         else if (x.cls == ScaleClass::scene) out.push_back(Fix::twin);
         else out.push_back(Fix::unresolved);
     }

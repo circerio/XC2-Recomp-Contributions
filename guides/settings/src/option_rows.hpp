@@ -29,7 +29,7 @@ struct RowState {
     bool missing = false;        // not on this PC at all: no driver support, a file that is not there (shows "unavailable")
     bool held = false;           // another row's choice holds it (an upscaler anti-aliases itself): value kept, greyed
     bool waits_for_start = false;  // the value chosen is not the one running; it takes effect at the next start
-    bool kept_for_later = false;   // set now, used once another row turns its feature on (HDR levels with HDR off)
+    bool kept_for_later = false;   // set now, used once another row turns its feature on (surround positioning at a stereo output)
 };
 
 // The value shown for a row: the one in use when the port can tell (a test switch or a hotkey may have changed it since

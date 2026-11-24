@@ -55,8 +55,10 @@ Our pages, as they are in our main line:
 
 | Tab | Rows |
 |---|---|
-| Display (in place of the game's camera tab) | Display mode, Output resolution, Refresh rate (shows the desktop's), Vertical sync, Variable refresh rate, Frame rate cap, HDR, Peak brightness, Paper white, Highlight compression (shown only where it changes something) |
-| Sound, Screen, Game | The game's own, unchanged |
+| Display (in place of the game's camera tab) | Display mode, Output resolution, Refresh rate (shows the desktop's), Vertical sync, Variable refresh rate, Frame rate cap, HDR, HDR calibration ▶ (Peak brightness, Paper white, and Highlight compression where it changes something), Text language |
+| Sound | The game's own, then Sound output ▶ (Sound output, Surround positioning) |
+| Screen | The game's own |
+| Game | The game's own, then the Sprint rows (Sprint itself is still in development), Subtitles for the party's post-battle banter |
 | Graphics (new) | Super resolution, Super resolution quality, Render resolution, Dynamic resolution, Anti-aliasing, Frame generation and latency ▶, Texture quality, Anisotropic filtering, Depth of field, Motion blur |
 | Controls (new) | Mouse camera, Mouse sensitivity, Number keys in battle, Keyboard and mouse keys ▶, Controller buttons ▶, Controller layout, Camera ▶ (the game's own camera panel, section 7) |
 
@@ -86,8 +88,10 @@ start-up, before the game opens the archive, the port:
    archive and the index on disk never change. Pick an entry form the game already reads: many files in ours were stored
    uncompressed anyway, so the port needs no compressor.
 3. **Is checked offline.** We build the patching code on its own, run it against the player's files, and compare its
-   output with a second, independent reader: every index entry not replaced is byte-identical, every original UI object
-   and table row is unchanged, and the new rows are as intended. [measured]
+   output with a second, independent reader: every index entry not replaced is byte-identical, every original table row
+   is unchanged, and every original UI object is still there. The only original objects that differ are the ones we
+   change on purpose: where the game's Sound and Game panels and their rows sit, and which input definition its option
+   panels use (both below). The new rows are as intended. [measured]
 
 What surprised us: [measured]
 
@@ -96,7 +100,9 @@ What surprised us: [measured]
   images were found, every text was not. The new text objects needed rows in that table too.
 - **A copied panel copies its input rules.** The game's option panels change values only with the D-pad's left and
   right. Our port maps the keyboard's arrow keys to the left stick, so the arrow keys did nothing. The new panel got an
-  input definition of its own, a copy with the stick added. The game's own panels kept theirs.
+  input definition of its own, a copy with the stick added. Later we did the same for the game's own option panels: they
+  now point at copies with the stick added, so the arrow keys and the left stick change their values too. The original
+  definitions stay as they were.
 - **Find out how the game decides what a tab opens.** Ours picks the panel by the tab's position, and a new position
   would have opened an existing panel [inferred from the game's code]. So the hook opens our panel for our tabs itself,
   and passes every other tab to the game.
@@ -106,6 +112,13 @@ What surprised us: [measured]
 New tab icons follow the same rule. The game's icon sheet had empty frames. At start-up the port draws our own symbols
 into them, compresses only those blocks again, and serves the sheet like the other files. The offline check finds only
 those frames changed [measured]. Our own symbols are all we ship.
+
+**Rows on the game's own pages.** A few of our rows belong next to the game's own: the sound output on its Sound page, and
+a few options on its Game page. Those panels move to a taller frame with ten row places, which another of the game's
+panels already uses, and get copies of rows in the places after the game's own. [measured] The game takes its rows by
+number until one is missing, so our copies have names outside its numbering. It does not always show all of its rows, so
+ours follow the last one it shows. [inferred from the game's code, measured] If a panel is not the one we studied, our rows
+for it go on our own pages instead.
 
 ## 4. Hooks that really run
 
@@ -134,6 +147,11 @@ The reference code is [`src/settings_file.hpp`](src/settings_file.hpp).
   screen after changing only PC settings writes nothing. [measured, section 10]
 - **Not in unused bytes either.** Spare bytes in the game's own option data are tempting. But when the player changes any
   of the game's options, the game writes those bytes into its save too. [inferred]
+- **One exception, for the text language.** The game keeps its language in its own option save. Our row writes only our
+  settings file and takes effect at the next start. When the game then reads its option save, the port changes the
+  language in the bytes the game gets, never in the file. [measured] The game runs in that language from then on, so when
+  it next saves its options itself, it writes that language. [measured for Japanese; inferred for the others, which take
+  the same path]
 - **One `key=value` per line, written at once.** Each change goes to a temporary file that is then renamed over the old
   one. Comments and keys this version does not know are kept as they are, so an older and a newer build can share the
   file. A key appears only once the player sets it.
@@ -161,15 +179,17 @@ can do on this PC now:
 
 | State | What the player sees | Our examples |
 |---|---|---|
-| Not on this PC | Greyed, the value reads "unavailable", the caption says why | An upscaler whose libraries are missing; HDR while the display or Windows has it off (the caption says to turn it on and restart the game) |
+| Not on this PC | Greyed, the value reads "unavailable", the caption says why | An upscaler whose libraries are missing; HDR while the display or Windows has it off (the caption says it can be used once it is turned on; no restart is needed) |
 | Held by another row | Greyed, the value kept, the caption says what holds it | Anti-aliasing while an upscaler is chosen, which anti-aliases by itself |
 | A value that cannot work here | Left and right step past it | Exclusive fullscreen where the driver does not offer it |
-| Takes effect at the next start | The caption says so while the value chosen is not the one running | Anti-aliasing |
-| Used later | Can be set now; the caption says it is kept and takes effect once its feature is on | Peak brightness and paper white while HDR is off |
+| Takes effect at the next start | The caption says so while the value chosen is not the one running | Text language |
+| Used later | Can be set now; the caption says it is kept and takes effect once its feature is on | Surround positioning while the output is stereo |
 | Nothing to step through | No arrows; left and right play the game's own "limit" sound | The refresh rate row, which shows the desktop's rate |
 
 - The cursor skips rows that are only placeholders. A greyed row with a reason can still be selected, so the player can
   read the reason.
+- A row that opens a page can be greyed too, and then does not open it. Ours for the HDR calibration is greyed while HDR is
+  off, and its caption says to turn HDR on first.
 - When several states apply, the caption shows the first, in the table's order.
 - Lists wrap around, as the game's own lists do.
 - Choosing a value puts it to work first and saves it after. If the runtime cannot do it, nothing is saved and the row
@@ -194,7 +214,9 @@ What testing taught us: [measured]
 
 - **Restoring the defaults** uses the game's own confirmation dialog and message. Yes restores the page in view only.
   [measured] A setting whose default follows others is cleared rather than set: dynamic resolution's default depends
-  on the render and output resolutions, so it keeps following them.
+  on the render and output resolutions, so it keeps following them. On the game's own Sound page, answering yes to its
+  restore-defaults question also puts our rows there back to their defaults. [measured] Its Game page does the same for
+  ours there. [inferred]
 - **The game's camera options** moved from their tab to a row of our controls page. The row opens the game's own camera
   panel, with the game's text, sliders and save path, and B there comes back to our page. An option changed this way
   wrote a save byte-identical to the same change from the game's original tab. [measured]

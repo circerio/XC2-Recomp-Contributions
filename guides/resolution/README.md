@@ -30,8 +30,8 @@ A scale below is relative to the game's own pixels: the game's 1280x720 shown at
    Ryujinx's, already emits the code; feed it the right scale per draw. [section 4]
 4. Split the frame after the anti-aliasing resolve: from there on, draw into output-size copies of the scene images, so
    tone mapping and the interface run at the output size. [section 5]
-5. When one pass binds attachments at two scales, make the smaller one larger, for good if the scene never uses it.
-   [section 6]
+5. When one pass binds attachments at two scales, bring them all to one: the presented texture's when it is among them,
+   else the largest. An image the scene never uses is made again at that scale, for good. [section 6]
 6. If the game lowers its own resolution, accept its smaller targets, and leave that off by default once the picture is
    not at the game's own size. [section 7]
 7. Distance-field text gets blurrier with the output scale. Narrow its edge by the scale, up to 2. [section 8]
@@ -53,7 +53,8 @@ The reference code is [`src/render_scale.hpp`](src/render_scale.hpp) (`classify`
 - **Decide when the image is made**, from its size and its first use. A screen-sized image that is first sampled and only
   later drawn into, such as an anti-aliasing history, becomes a scene image the first time it is a target.
 - **Images a shader writes as storage, or the CPU uploads, go back to the game's size.** Their writes are in the game's
-  pixels, and the translator rescales reads only. [inferred]
+  pixels, and the translator rescales reads only. [inferred] An image a fragment shader only reads as storage keeps its
+  scale (section 4).
 
 ## 3. Commands given in the game's pixels
 
@@ -85,6 +86,18 @@ What each draw passes for a bound texture (`texture_scale_value`), following Ryu
   only. We inspected our game's geometry shaders: each only samples with normalised coordinates, so the scale does not
   affect them. The picture showed no misplaced effect. [measured]
 
+**Storage images a fragment stage only reads keep their scale** (`storage_keeps_scale`). Their loads get the scale by the
+rule above, as texel fetches do. Our first version put every scaled image bound as storage back at the game's size, for
+good. One of our game's fragment shaders reads the scene's normals that way, at its own pixel. At 3840x2160 the first such
+draw put that full-size target back at 1280x720, every later pass drew it among 4K targets, and most of the screen went
+black in one area of the game until the game was closed. [seen, measured] With the fix, the black areas no longer appear
+there. [seen]
+
+- The translated shaders carried no read-only mark on those images, so a fix that looked for the mark changed nothing. We
+  count an image as read-only when nothing in the shader module writes it: no image write and no texel pointer reaches it.
+  [measured]
+- Images a shader writes, and images any other stage reads as storage, still go back to the game's size.
+
 ## 5. The scene and the interface apart
 
 To keep the scene at the internal resolution and still draw the interface sharp, the frame is split after the draw that
@@ -111,11 +124,20 @@ the game's own. [measured]
 
 Sometimes one pass binds attachments that ended up at different scales. In our game the interface pass binds the presented
 texture (output scale) together with a 1280x720 depth buffer that only the interface and the sharpening use. [measured]
-(`fix_pass`.)
+(`pass_scale`, `fix_pass`.)
 
-- **An image the scene never draws into:** make it again at the larger scale, for good, keeping its content scaled.
+- **The scale the pass goes to:** the presented texture's when one is among the attachments, else the largest of them. (A
+  presented texture that was put back at the game's size does not count.)
+- **An image the scene never draws into:** make it again at that scale, for good, keeping its content scaled.
 - **A scene image:** give it a twin for the rest of the frame (section 5).
 - **Anything else:** log it rather than guess.
+
+**The presented texture never grows.** Our first version always went to the largest scale. That depth buffer is a
+screen-sized target, so it starts at the internal scale. With the scene above the output, for example 150% of a 3840x2160
+output, it was the largest, so the presented textures were made again at 5120x2880, for good. After that, every draw after
+the split met targets at two scales. [measured] Now the depth buffer goes to the presented texture's scale instead. The
+output stays at its size, and in the runs we checked no pass was left with two scales. [measured] With the scene at or
+below the output, nothing changes.
 
 ## 7. The game's own dynamic resolution
 

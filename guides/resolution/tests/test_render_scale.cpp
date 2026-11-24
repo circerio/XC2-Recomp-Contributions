@@ -75,16 +75,37 @@ int main() {
         // Nothing reaches a geometry stage.
         CHECK(!texture_scale_value(Stage::geometry, 2.0f, kGame, 2.0f, kGame));
     }
+    {  // Storage images: only one a fragment stage reads and never writes keeps its scale.
+        CHECK(storage_keeps_scale(Stage::fragment, false));
+        CHECK(!storage_keeps_scale(Stage::fragment, true));
+        CHECK(!storage_keeps_scale(Stage::vertex, false) && !storage_keeps_scale(Stage::compute, false));
+        // Kept at the target's scale, it is read at the pixel's own texel, as a texture is.
+        CHECK(*texture_scale_value(Stage::fragment, 3.0f, kGame, 3.0f, kGame) == -3.0f);
+    }
     {  // One pass, two scales.
         // The interface draws into the presented texture (output 3) with a depth buffer the scene never used (1).
         auto f = fix_pass({{3.0f, ScaleClass::window, true}, {1.0f, ScaleClass::other, false}});
-        CHECK(f[0] == Fix::none && f[1] == Fix::promote);
+        CHECK(f[0] == Fix::none && f[1] == Fix::remake);
         // After the split, a scene image (internal 2) drawn with the presented texture (3): a twin.
         f = fix_pass({{2.0f, ScaleClass::scene, true}, {3.0f, ScaleClass::window, true}});
         CHECK(f[0] == Fix::twin && f[1] == Fix::none);
         // A smaller image that is neither: say so instead of guessing.
         f = fix_pass({{3.0f, ScaleClass::window, true}, {1.0f, ScaleClass::other, true}});
         CHECK(f[1] == Fix::unresolved);
+        // The scene above the output (4 over 3): the same depth buffer, made at the scene's scale, goes down to the
+        // presented texture's, which never grows. Whichever order they are bound in.
+        f = fix_pass({{3.0f, ScaleClass::window, true}, {4.0f, ScaleClass::scene, false}});
+        CHECK(f[0] == Fix::none && f[1] == Fix::remake);
+        f = fix_pass({{4.0f, ScaleClass::scene, false}, {3.0f, ScaleClass::window, true}});
+        CHECK(f[0] == Fix::remake && f[1] == Fix::none);
+        // A scene image there: a twin at the output's scale.
+        f = fix_pass({{4.0f, ScaleClass::scene, true}, {3.0f, ScaleClass::window, true}});
+        CHECK(f[0] == Fix::twin && f[1] == Fix::none);
+        // No presented texture in the pass: the largest scale.
+        f = fix_pass({{2.0f, ScaleClass::scene, true}, {1.0f, ScaleClass::other, false}});
+        CHECK(f[0] == Fix::none && f[1] == Fix::remake);
+        CHECK(pass_scale({{4.0f, ScaleClass::scene, true}, {3.0f, ScaleClass::window, true}}) == 3.0f);
+        CHECK(pass_scale({{4.0f, ScaleClass::scene, true}, {1.0f, ScaleClass::other, false}}) == 4.0f);
         // All at one scale: nothing to do.
         f = fix_pass({{2.0f, ScaleClass::scene, true}, {2.0f, ScaleClass::scene, true}});
         CHECK(f[0] == Fix::none && f[1] == Fix::none);

@@ -233,7 +233,14 @@ If you test without a person at the machine, wake the display, keep it on, and r
 ## 7. What this guide does not cover
 
 - **AMD, Intel, Linux.** Not tested. The rules treat an unknown display as VRR-capable, so a monitor without VRR is capped below its refresh rate.
-- **Frame generation and Reflex together with VRR.** We have not verified these, so we make no recommendation.
+- **Frame generation together with VRR.** We looked at one case: DLSS frame generation in a borderless window. HDR was on, but its
+  picture was not part of the check. The monitor's refresh display followed the frame rate, and no tear line crossed the picture
+  when the camera turned quickly. [seen] The log of that play shows the VRR rules in use and up to six frames shown for each rendered
+  one, presented with IMMEDIATE. The cap of section 2 counted the frames shown, so the game rendered at the cap divided by the frames
+  shown for each rendered one. [measured]
+  We have not checked exclusive fullscreen, or FSR frame generation, this way.
+- **Reflex together with VRR.** Reflex was on during that check, because DLSS frame generation needs it. [read, measured] We have not
+  compared VRR with Reflex on and off, and have not measured latency.
 - **Why a decorated window did not engage VRR.** Not investigated.
 - **HDR with exclusive fullscreen.** Runs without errors, but nobody has checked the picture.
 - **Flicker.** OLED panels can show brightness changes when VRR's rate swings widely. We did not study this.
