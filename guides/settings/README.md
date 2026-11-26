@@ -179,9 +179,9 @@ can do on this PC now:
 
 | State | What the player sees | Our examples |
 |---|---|---|
-| Not on this PC | Greyed, the value reads "unavailable", the caption says why | Frame generation whose libraries are missing; HDR while the display or Windows has it off (the caption says it can be used once it is turned on; no restart is needed) |
+| Not on this PC | Greyed, the value reads "unavailable", the caption says why | Frame generation where its library, the graphics card or the driver does not offer it; HDR while the display or Windows has it off (the caption says it can be used once it is turned on; no restart is needed) |
 | Held by another row | Greyed, the value kept, the caption says what holds it | Anti-aliasing while an upscaler is chosen, which anti-aliases by itself |
-| A value that cannot work here | Left and right step past it | Exclusive fullscreen where the driver does not offer it; an upscaler whose libraries are missing |
+| A value that cannot work here | Left and right step past it | Exclusive fullscreen where the driver does not offer it; an upscaler that cannot run on this PC |
 | Takes effect at the next start | The caption says so while the value chosen is not the one running | Text language |
 | Used later | Can be set now; the caption says it is kept and takes effect once its feature is on | Surround positioning while the output is stereo |
 | Nothing to step through | No arrows; left and right play the game's own "limit" sound | The refresh rate row, which shows the desktop's rate |
@@ -239,10 +239,9 @@ What testing taught us: [measured]
 
 The reference code is [`src/key_bindings.hpp`](src/key_bindings.hpp).
 
-- **Sets.** Actions active at the same time form a set, and within a set a key belongs to one action. The menu's keys are
-  a set of their own and may reuse keys used in play. Ours also binds left and right Shift or Ctrl as keys of their own,
-  and a swap frees only the first action whose key overlaps, so giving the plain Shift to a third action can leave one
-  overlap. The reference code has no such keys.
+- **Sets.** Actions active at the same time form a set, and within a set the rebinding pages never leave one key on two
+  actions. In ours a file edited by hand can; the reference code skips a key given twice. The menu's keys are a set of
+  their own and may reuse keys used in play.
 - **Swaps.** Giving an action a key another action has swaps their keys. If the old key is not one the other action may
   have, the other gets its own default. If that is taken too, it gets no key and shows "conflict" until its default is
   free again, and then gets it back by itself.
