@@ -99,7 +99,7 @@ What surprised us: [measured]
   game creates only the text objects listed in a separate table. We found it by logging every object lookup: panels and
   images were found, every text was not. The new text objects needed rows in that table too.
 - **A copied panel copies its input rules.** The game's option panels change values only with the D-pad's left and
-  right. Our port maps the keyboard's arrow keys to the left stick, so the arrow keys did nothing. The new panel got an
+  right. Our port then mapped the keyboard's arrow keys to the left stick, so the arrow keys did nothing. The new panel got an
   input definition of its own, a copy with the stick added. Later we did the same for the game's own option panels: they
   now point at copies with the stick added, so the arrow keys and the left stick change their values too. The original
   definitions stay as they were.
@@ -179,9 +179,9 @@ can do on this PC now:
 
 | State | What the player sees | Our examples |
 |---|---|---|
-| Not on this PC | Greyed, the value reads "unavailable", the caption says why | An upscaler whose libraries are missing; HDR while the display or Windows has it off (the caption says it can be used once it is turned on; no restart is needed) |
+| Not on this PC | Greyed, the value reads "unavailable", the caption says why | Frame generation whose libraries are missing; HDR while the display or Windows has it off (the caption says it can be used once it is turned on; no restart is needed) |
 | Held by another row | Greyed, the value kept, the caption says what holds it | Anti-aliasing while an upscaler is chosen, which anti-aliases by itself |
-| A value that cannot work here | Left and right step past it | Exclusive fullscreen where the driver does not offer it |
+| A value that cannot work here | Left and right step past it | Exclusive fullscreen where the driver does not offer it; an upscaler whose libraries are missing |
 | Takes effect at the next start | The caption says so while the value chosen is not the one running | Text language |
 | Used later | Can be set now; the caption says it is kept and takes effect once its feature is on | Surround positioning while the output is stereo |
 | Nothing to step through | No arrows; left and right play the game's own "limit" sound | The refresh rate row, which shows the desktop's rate |
@@ -239,13 +239,16 @@ What testing taught us: [measured]
 
 The reference code is [`src/key_bindings.hpp`](src/key_bindings.hpp).
 
-- **Sets.** Actions active at the same time form a set, and within a set no key is ever two actions'. The menu's keys are
-  a set of their own and may reuse keys used in play.
+- **Sets.** Actions active at the same time form a set, and within a set a key belongs to one action. The menu's keys are
+  a set of their own and may reuse keys used in play. Ours also binds left and right Shift or Ctrl as keys of their own,
+  and a swap frees only the first action whose key overlaps, so giving the plain Shift to a third action can leave one
+  overlap. The reference code has no such keys.
 - **Swaps.** Giving an action a key another action has swaps their keys. If the old key is not one the other action may
   have, the other gets its own default. If that is taken too, it gets no key and shows "conflict" until its default is
   free again, and then gets it back by itself.
-- **Refused keys.** The port's own keys (fullscreen) and the OS's (Alt, the Windows key) are refused, and the caption says
-  that key cannot be used.
+- **Refused keys.** The port's own keys (fullscreen and a debugging key), the OS's (Alt, the Windows key, Print Screen)
+  and Esc, which cancels the wait, are refused, and the caption says that key cannot be used. The menu's confirm and back
+  also refuse Tab, Shift, the mouse buttons and the wheel, which the menu keeps for itself.
 - **Cancelling.** Esc cancels the wait, and so does a timeout, with nothing changed.
 - **Restoring one page** must also move other actions off the keys that page takes back. Ours first did not, and one key
   ended up on two actions. [measured]

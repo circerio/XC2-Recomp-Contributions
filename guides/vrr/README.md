@@ -62,6 +62,12 @@ Why these choices:
 - **A decorated window keeps its old behaviour.** It is composited by the desktop, so VRR depends on the driver setting,
   and FIFO on a fixed refresh rate waits for it. When we tested it, the indicator did not appear in a decorated window even with
   "windowed and full screen" selected. [seen] We did not find out why, and for us it was not worth pursuing.
+- **With DLSS frame generation's library loaded, the table changes.** Our port loads that library whenever its files are
+  there and the GPU and driver support it, whatever the frame generation setting says. While the rules apply, it then
+  presents with IMMEDIATE and limits the frame rate through Reflex, also while frame generation is off or paused. In a
+  play with frame generation switched off in the menu, every swapchain made later was IMMEDIATE, and Reflex's limit
+  stayed at the cap. [measured] While FSR frame generation presents, the vsync row picks FIFO or IMMEDIATE as in the
+  table. The table, and the reference code, are the rules without that library.
 
 Present mode is fixed when a swapchain is created, so when a fact changes, recreate the swapchain before the next present.
 Read the refresh rate of the monitor the window is on (`MonitorFromWindow`, `GetMonitorInfo`, `EnumDisplaySettings`) when the
