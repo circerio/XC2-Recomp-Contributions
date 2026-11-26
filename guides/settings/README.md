@@ -55,7 +55,7 @@ Our pages, as they are in our main line:
 
 | Tab | Rows |
 |---|---|
-| Display (in place of the game's camera tab) | Display mode, Output resolution, Refresh rate (shows the desktop's), Vertical sync, Variable refresh rate, Frame rate cap, HDR, HDR calibration ▶ (Peak brightness, Paper white, and Highlight compression where it changes something), Text language |
+| Video (in place of the game's camera tab) | Display mode, Output resolution, Refresh rate (shows the desktop's), Vertical sync, Variable refresh rate, Frame rate cap, HDR, HDR calibration ▶ (Peak brightness, Paper white, and Highlight compression where it changes something), Text language |
 | Sound | The game's own, then Sound output ▶ (Sound output, Surround positioning) |
 | Screen | The game's own |
 | Game | The game's own, then the Sprint rows (Sprint itself is still in development), Subtitles for the party's post-battle banter |
