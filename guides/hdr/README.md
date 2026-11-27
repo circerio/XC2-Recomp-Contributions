@@ -32,7 +32,7 @@ Each result says how we know it:
 
 1. Do it in two stages. First get the SDR picture onto an HDR swapchain correctly. Only then add highlights. The first stage can be checked with numbers.
 2. Decode with the piecewise sRGB curve, the one Windows uses for SDR content, and scale so that SDR white is the paper white.
-3. Take the default peak from the display and the default paper white from Windows. A fixed paper white made our HDR look dimmer than SDR. [seen]
+3. Take the default peak from the display and the default paper white from Windows, and ask for both again when the display changes. A fixed paper white made our HDR look dimmer than SDR. [seen]
 4. If the game has a linear scene before its tone map, use that. Don't try to reconstruct highlights from the SDR result.
 5. Let the game's own tone map run as it is, and draw the clipped pixels again with your own pass. You then ship no modified game shader.
 6. Scale a clipped colour to 1 in its largest channel to keep its hue. Clipping each channel turns bright colours yellow and then white.
@@ -99,7 +99,7 @@ With only this, the picture is the SDR picture at paper white brightness: no hig
 | Peak | What the display reports | 1000 nits | DXGI `IDXGIOutput6::GetDesc1`, `MaxLuminance`, for the output showing the window |
 | Paper white | What Windows uses for SDR content | 200 nits | `DisplayConfigGetDeviceInfo` with `DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL`; 1000 in that API means 80 nits |
 
-[`src/windows_display_levels.hpp`](src/windows_display_levels.hpp) has both. They aren't per-frame calls: ask when you create a swapchain, and ask for the paper white again when it may have changed.
+[`src/windows_display_levels.hpp`](src/windows_display_levels.hpp) has both. They aren't per-frame calls: ask when you create a swapchain, and ask for both again when they may have changed.
 
 While HDR runs and the paper white follows Windows, our main line asks again when Windows announces a display or settings change (`WM_DISPLAYCHANGE`, `WM_SETTINGCHANGE`) and when the player opens our display settings. It also reads the value every two seconds, because we rely on no notice for Windows' brightness slider. In one play that reading went from 80 to 360 nits, and the paper white followed it. [measured] We can't tell from the log whether the slider moved or HDR was switched on in Windows.
 
@@ -113,7 +113,7 @@ small area of the panel. [read] Our monitor reported 550 nits, for a small area 
 400. [measured] We expect a peak of 400 to keep our own shoulder within what the panel can show in that mode, instead of the panel
 cutting off the top, but we have not checked it. [inferred] This is one more reason to keep the peak setting.
 
-Our main line asks for the peak only once per run. In one play the first ask gave 465.5 nits (265 for the full frame), and the peak stayed at 465.5 after the paper white went to 360. [measured] We think Windows' HDR was off at that ask. [inferred] So ask for the peak again when the surface's formats are asked again.
+Our main line used to ask for the peak only once per run. In one play the first ask gave 465.5 nits (265 for the full frame), and the peak stayed at 465.5 after the paper white went to 360. [measured] We think Windows' HDR was off at that ask. [inferred] Now, while HDR runs and the peak is the display's own, it asks again when Windows announces a display or settings change (while the paper white follows Windows, a change in the SDR white it reads every two seconds counts as one), when the player opens our display settings, and when a swapchain is made. Otherwise it forgets the answer and asks when HDR next needs it. An answer of none keeps the last one, and the same answer changes nothing. A unit test and a scripted display in headless runs cover this. [measured] A real switch of Windows' HDR while the game runs has not been tried. So ask for the peak again when the surface's formats are asked again.
 
 **Why the paper white should follow Windows.** Our first default was a fixed 200 nits. Windows was showing SDR at 360 nits, so turning HDR on made the whole picture 1.8 times dimmer, and SDR looked more glaring than HDR. [seen] That comparison was unfair, and a player would make the same one. Following Windows means turning HDR on doesn't change the brightness of the SDR range.
 
